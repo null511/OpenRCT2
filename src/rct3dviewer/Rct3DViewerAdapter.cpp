@@ -20,9 +20,10 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <thread>
 
-static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 10);
+static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 12);
 
 struct Rct3DOpenRCT2Context
 {
@@ -41,6 +42,17 @@ namespace
     std::mutex gAdapterMutex;
     Rct3DOpenRCT2Context* gActiveContext = nullptr;
     thread_local std::string gLastError;
+
+    uint32_t HashTerrainSurfaceIdentifier(std::string_view identifier)
+    {
+        uint32_t hash = 2166136261u;
+        for (const auto character : identifier)
+        {
+            hash ^= static_cast<uint8_t>(character);
+            hash *= 16777619u;
+        }
+        return hash;
+    }
 
     int32_t SetError(Rct3DOpenRCT2Status status, const char* message)
     {
@@ -308,10 +320,11 @@ extern "C"
             const auto mapColour = surfaceObject == nullptr
                 ? 0
                 : static_cast<uint8_t>(surfaceObject->getMapColours(surface->getPrimarySurfaceColour())[0]);
+            const auto surfaceIdHash = surfaceObject == nullptr ? 0u : HashTerrainSurfaceIdentifier(surfaceObject->GetIdentifier());
             output[index] = {
-                        surface->baseHeight,
-                        surface->getSlope(),
-                        surface->getSurfaceObjectIndex(),
+                surfaceIdHash,
+                surface->baseHeight,
+                surface->getSlope(),
                 cornerHeights.bottom,
                 cornerHeights.left,
                 cornerHeights.top,

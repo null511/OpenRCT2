@@ -22,21 +22,21 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 3u
+#define RCT3D_OPENRCT2_ABI_VERSION 4u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
 typedef struct Rct3DOpenRCT2SurfaceData
 {
+	uint32_t terrain_surface_id_hash;
 	uint8_t base_z;
 	uint8_t slope_flags;
-	uint16_t ground_type;
- uint8_t north_corner_height;
- uint8_t east_corner_height;
- uint8_t south_corner_height;
- uint8_t west_corner_height;
- uint8_t map_colour;
- uint8_t reserved;
+	uint8_t north_corner_height;
+	uint8_t east_corner_height;
+	uint8_t south_corner_height;
+	uint8_t west_corner_height;
+	uint8_t map_colour;
+	uint8_t reserved;
 } Rct3DOpenRCT2SurfaceData;
 
 typedef enum Rct3DOpenRCT2Status
