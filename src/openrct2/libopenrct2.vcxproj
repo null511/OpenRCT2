@@ -46,9 +46,10 @@
     <RootNamespace>openrct2-lib</RootNamespace>
     <ProjectName>libopenrct2</ProjectName>
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <PropertyGroup Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
   </PropertyGroup>
   <Import Project="..\..\openrct2.common.props" />
   <Import Project="..\..\openrct2.deps.targets" Condition="'$(IsSolutionBuild)' != 'true'" />
@@ -188,6 +189,7 @@
     <ClInclude Include="config\IniReader.hpp" />
     <ClInclude Include="config\IniWriter.hpp" />
     <ClInclude Include="Context.h" />
+    <ClInclude Include="..\rct3dviewer\Rct3DViewerAdapter.h" />
     <ClInclude Include="core\Algorithm.hpp" />
     <ClInclude Include="core\BackgroundWorker.hpp" />
     <ClInclude Include="core\BitSet.hpp" />
@@ -399,7 +401,7 @@
     <ClInclude Include="object\WaterEntry.h" />
     <ClInclude Include="object\WaterObject.h" />
     <ClInclude Include="OpenRCT2.h" />
-    <ClInclude Include="openrct2_pch.h"/>
+    <ClInclude Include="openrct2_pch.h" />
     <ClInclude Include="paint\Boundbox.h" />
     <ClInclude Include="paint\Paint.Entity.h" />
     <ClInclude Include="paint\Paint.h" />
@@ -868,6 +870,7 @@
     <ClCompile Include="config\IniReader.cpp" />
     <ClCompile Include="config\IniWriter.cpp" />
     <ClCompile Include="Context.cpp" />
+    <ClCompile Include="..\rct3dviewer\Rct3DViewerAdapter.cpp" />
     <ClCompile Include="core\ChecksumStream.cpp" />
     <ClCompile Include="core\Compression.cpp" />
     <ClCompile Include="core\Console.cpp" />

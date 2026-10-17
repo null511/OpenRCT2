@@ -1,0 +1,374 @@
+/*****************************************************************************
+ * Copyright (c) 2026 OpenRCT2 developers
+ *
+ * This file is part of OpenRCT2.
+ * OpenRCT2 is licensed under the GNU General Public License version 3.
+ *****************************************************************************/
+
+#include "Rct3DViewerAdapter.h"
+
+#include "../openrct2/Context.h"
+#include "../openrct2/GameState.h"
+#include "../openrct2/OpenRCT2.h"
+#include "../openrct2/PlatformEnvironment.h"
+#include "../openrct2/object/TerrainSurfaceObject.h"
+#include "../openrct2/world/Map.h"
+#include "../openrct2/world/tile_element/Slope.h"
+#include "../openrct2/world/tile_element/SurfaceElement.h"
+
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+
+static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 10);
+
+struct Rct3DOpenRCT2Context
+{
+    std::unique_ptr<OpenRCT2::IContext> openrct2;
+    std::thread::id ownerThread;
+    bool parkLoaded = false;
+    bool previousHeadless = false;
+    bool previousNoGraphics = false;
+    bool processSettingsCaptured = false;
+    std::string previousOpenRCT2DataPath;
+    std::string previousRCT2DataPath;
+};
+
+namespace
+{
+    std::mutex gAdapterMutex;
+    Rct3DOpenRCT2Context* gActiveContext = nullptr;
+    thread_local std::string gLastError;
+
+    int32_t SetError(Rct3DOpenRCT2Status status, const char* message)
+    {
+        gLastError = message;
+        return static_cast<int32_t>(status);
+    }
+
+    void RestoreProcessSettings(const Rct3DOpenRCT2Context& context)
+    {
+        gOpenRCT2Headless = context.previousHeadless;
+        gOpenRCT2NoGraphics = context.previousNoGraphics;
+        gCustomOpenRCT2DataPath = context.previousOpenRCT2DataPath;
+        gCustomRCT2DataPath = context.previousRCT2DataPath;
+    }
+
+    int32_t ValidateContext(Rct3DOpenRCT2Context* context)
+    {
+        if (context == nullptr || context != gActiveContext || context->openrct2 == nullptr)
+        {
+            return SetError(RCT3D_OPENRCT2_INVALID_STATE, "OpenRCT2 context is not initialized.");
+        }
+
+        if (context->ownerThread != std::this_thread::get_id())
+        {
+            return SetError(RCT3D_OPENRCT2_WRONG_THREAD, "OpenRCT2 context calls must use its initialization thread.");
+        }
+
+        return RCT3D_OPENRCT2_OK;
+    }
+
+    void ReleaseContextResources(Rct3DOpenRCT2Context* context)
+    {
+        if (context == nullptr)
+        {
+            return;
+        }
+
+        context->openrct2.reset();
+        if (context->processSettingsCaptured)
+        {
+            RestoreProcessSettings(*context);
+        }
+        if (gActiveContext == context)
+        {
+            gActiveContext = nullptr;
+        }
+    }
+
+    void DisposeContext(Rct3DOpenRCT2Context* context)
+    {
+        if (context == nullptr)
+        {
+            return;
+        }
+
+        ReleaseContextResources(context);
+        delete context;
+    }
+}
+
+extern "C"
+{
+    uint32_t rct3d_openrct2_get_abi_version(void)
+    {
+        return RCT3D_OPENRCT2_ABI_VERSION;
+    }
+
+    int32_t rct3d_openrct2_initialize(
+        const char* openrct2_path_utf8, const char* rct2_path_utf8, Rct3DOpenRCT2Context** out_context)
+    {
+        std::unique_ptr<Rct3DOpenRCT2Context> context;
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            if (out_context == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The output context pointer is null.");
+            }
+            *out_context = nullptr;
+
+            if (openrct2_path_utf8 == nullptr || rct2_path_utf8 == nullptr || openrct2_path_utf8[0] == '\0'
+                || rct2_path_utf8[0] == '\0')
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "Both OpenRCT2 and RCT2 data paths are required.");
+            }
+
+            if (gActiveContext != nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "Only one OpenRCT2 context can be active in this process.");
+            }
+
+            if (!std::filesystem::is_directory(std::filesystem::u8path(openrct2_path_utf8))
+                || !std::filesystem::is_directory(std::filesystem::u8path(rct2_path_utf8)))
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "An OpenRCT2 or RCT2 data directory does not exist.");
+            }
+
+            context = std::make_unique<Rct3DOpenRCT2Context>();
+            context->ownerThread = std::this_thread::get_id();
+            context->previousHeadless = gOpenRCT2Headless;
+            context->previousNoGraphics = gOpenRCT2NoGraphics;
+            context->previousOpenRCT2DataPath = gCustomOpenRCT2DataPath;
+            context->previousRCT2DataPath = gCustomRCT2DataPath;
+            context->processSettingsCaptured = true;
+
+            gOpenRCT2Headless = true;
+            gOpenRCT2NoGraphics = true;
+            gCustomOpenRCT2DataPath = openrct2_path_utf8;
+            gCustomRCT2DataPath = rct2_path_utf8;
+
+            context->openrct2 = OpenRCT2::CreateContext();
+            context->openrct2->GetPlatformEnvironment().SetBasePath(OpenRCT2::DirBase::rct2, rct2_path_utf8);
+            context->openrct2->GetPlatformEnvironment().SetBasePath(OpenRCT2::DirBase::openrct2, openrct2_path_utf8);
+            gActiveContext = context.get();
+
+            if (!context->openrct2->Initialise())
+            {
+                ReleaseContextResources(context.get());
+                return SetError(RCT3D_OPENRCT2_INITIALIZATION_FAILED, "OpenRCT2 context initialization failed.");
+            }
+
+            *out_context = context.release();
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            if (context != nullptr)
+            {
+                ReleaseContextResources(context.get());
+                context.reset();
+            }
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INITIALIZATION_FAILED);
+        }
+        catch (...)
+        {
+            if (context != nullptr)
+            {
+                ReleaseContextResources(context.get());
+                context.reset();
+            }
+            return SetError(RCT3D_OPENRCT2_INITIALIZATION_FAILED, "OpenRCT2 context initialization raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_load_park(Rct3DOpenRCT2Context* context, const char* park_path_utf8)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (park_path_utf8 == nullptr || park_path_utf8[0] == '\0')
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The park file path is empty.");
+            }
+
+            if (!context->openrct2->LoadParkFromFile(park_path_utf8))
+            {
+                context->parkLoaded = false;
+                return SetError(RCT3D_OPENRCT2_PARK_LOAD_FAILED, "OpenRCT2 failed to load the park file.");
+            }
+
+            context->parkLoaded = true;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_PARK_LOAD_FAILED);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_PARK_LOAD_FAILED, "OpenRCT2 park loading raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_map_dimensions(Rct3DOpenRCT2Context* context, int32_t* width, int32_t* height)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (width == nullptr || height == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "Map dimension output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            const auto& mapSize = OpenRCT2::getGameState().mapSize;
+            *width = mapSize.x;
+            *height = mapSize.y;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Reading map dimensions raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_surface_data(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2SurfaceData* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The surface data output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            const auto& mapSize = OpenRCT2::getGameState().mapSize;
+            const uint64_t required = static_cast<uint64_t>(mapSize.x) * static_cast<uint64_t>(mapSize.y);
+            if (mapSize.x <= 0 || mapSize.y <= 0 || capacity < required)
+            {
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The surface data buffer is smaller than the loaded map.");
+            }
+
+            for (int32_t y = 0; y < mapSize.y; ++y)
+            {
+                for (int32_t x = 0; x < mapSize.x; ++x)
+                {
+                    const auto* surface = OpenRCT2::MapGetSurfaceElementAt(TileCoordsXY{ x, y });
+                    if (surface == nullptr)
+                    {
+                        return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A loaded map tile has no surface element.");
+                    }
+
+                    const auto index = static_cast<uint64_t>(y) * static_cast<uint64_t>(mapSize.x)
+                        + static_cast<uint64_t>(x);
+            const auto cornerHeights = OpenRCT2::GetSlopeRelativeCornerHeights(surface->getSlope());
+            const auto* surfaceObject = OpenRCT2::TerrainSurfaceObject::GetById(surface->getSurfaceObjectIndex());
+            const auto mapColour = surfaceObject == nullptr
+                ? 0
+                : static_cast<uint8_t>(surfaceObject->getMapColours(surface->getPrimarySurfaceColour())[0]);
+            output[index] = {
+                        surface->baseHeight,
+                        surface->getSlope(),
+                        surface->getSurfaceObjectIndex(),
+                cornerHeights.bottom,
+                cornerHeights.left,
+                cornerHeights.top,
+                cornerHeights.right,
+                static_cast<uint8_t>(mapColour),
+                0,
+                    };
+                }
+            }
+
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying map surface data raised an unknown error.");
+        }
+    }
+
+    const char* rct3d_openrct2_get_last_error(void)
+    {
+        return gLastError.c_str();
+    }
+
+    int32_t rct3d_openrct2_shutdown(Rct3DOpenRCT2Context* context)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            if (context == nullptr)
+            {
+                return RCT3D_OPENRCT2_OK;
+            }
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+
+            DisposeContext(context);
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Shutting down OpenRCT2 raised an unknown error.");
+        }
+    }
+}
