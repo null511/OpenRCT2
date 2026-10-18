@@ -11,10 +11,19 @@
 #include "../openrct2/GameState.h"
 #include "../openrct2/OpenRCT2.h"
 #include "../openrct2/PlatformEnvironment.h"
+#include "../openrct2/object/Object.h"
+#include "../openrct2/object/ObjectManager.h"
+#include "../openrct2/object/FootpathObject.h"
+#include "../openrct2/object/FootpathRailingsObject.h"
+#include "../openrct2/object/FootpathSurfaceObject.h"
+#include "../openrct2/object/PathAdditionEntry.h"
 #include "../openrct2/object/TerrainSurfaceObject.h"
+#include "../openrct2/world/Footpath.h"
 #include "../openrct2/world/Map.h"
 #include "../openrct2/world/tile_element/Slope.h"
+#include "../openrct2/world/tile_element/PathElement.h"
 #include "../openrct2/world/tile_element/SurfaceElement.h"
+#include "../openrct2/world/tile_element/TileElement.h"
 
 #include <filesystem>
 #include <memory>
@@ -24,6 +33,7 @@
 #include <thread>
 
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 12);
+static_assert(sizeof(Rct3DOpenRCT2PathData) == 27);
 
 struct Rct3DOpenRCT2Context
 {
@@ -52,6 +62,103 @@ namespace
             hash *= 16777619u;
         }
         return hash;
+    }
+
+    uint32_t HashPathObjectIdentifier(std::string_view identifier)
+    {
+        uint32_t hash = 2166136261u;
+        for (const auto character : identifier)
+        {
+            hash ^= static_cast<uint8_t>(character);
+            hash *= 16777619u;
+        }
+        return hash;
+    }
+
+    Rct3DOpenRCT2PathData MakePathData(const OpenRCT2::PathElement& path, int32_t tileX, int32_t tileY)
+    {
+        const auto* surfaceObject = path.hasLegacyPathEntry()
+            ? static_cast<const OpenRCT2::Object*>(path.getLegacyPathEntry())
+            : static_cast<const OpenRCT2::Object*>(path.getSurfaceEntry());
+        const auto* railingsObject = path.hasLegacyPathEntry()
+            ? static_cast<const OpenRCT2::Object*>(path.getLegacyPathEntry())
+            : static_cast<const OpenRCT2::Object*>(path.getRailingsEntry());
+        const auto* railingsDescriptor = path.getRailingsDescriptor();
+        const auto* additionEntry = path.getAdditionEntry();
+        const auto* additionObject = additionEntry == nullptr
+            ? nullptr
+            : OpenRCT2::GetContext()->GetObjectManager().GetLoadedObject(
+                  OpenRCT2::ObjectType::pathAdditions, path.getAdditionEntryIndex());
+
+        uint8_t flags = 0;
+        if (path.isSloped())
+        {
+            flags |= RCT3D_OPENRCT2_PATH_FLAG_SLOPED;
+        }
+        if (path.isQueue())
+        {
+            flags |= RCT3D_OPENRCT2_PATH_FLAG_QUEUE;
+        }
+
+        uint8_t additionFlags = 0;
+        if (additionEntry != nullptr && additionEntry->flags.has(OpenRCT2::PathAdditionFlag::lamp))
+        {
+            additionFlags |= RCT3D_OPENRCT2_PATH_ADDITION_FLAG_LAMP;
+        }
+        if (path.isBroken())
+        {
+            additionFlags |= RCT3D_OPENRCT2_PATH_ADDITION_FLAG_BROKEN;
+        }
+
+        return {
+            tileX,
+            tileY,
+            surfaceObject == nullptr ? 0u : HashPathObjectIdentifier(surfaceObject->GetIdentifier()),
+            railingsObject == nullptr ? 0u : HashPathObjectIdentifier(railingsObject->GetIdentifier()),
+            path.baseHeight,
+            static_cast<uint8_t>(path.getSlopeDirection()),
+            path.getEdges(),
+            path.getCorners(),
+            flags,
+            railingsDescriptor == nullptr ? static_cast<uint8_t>(OpenRCT2::RailingEntrySupportType::box)
+                                           : static_cast<uint8_t>(railingsDescriptor->supportType),
+            additionObject == nullptr ? 0u : HashPathObjectIdentifier(additionObject->GetIdentifier()),
+            additionFlags,
+        };
+    }
+
+    template<typename TCallback>
+    bool ForEachPath(TCallback&& callback)
+    {
+        const auto& mapSize = OpenRCT2::getGameState().mapSize;
+        for (int32_t y = 0; y < mapSize.y; ++y)
+        {
+            for (int32_t x = 0; x < mapSize.x; ++x)
+            {
+                const TileCoordsXY tilePosition(x, y);
+                auto* element = OpenRCT2::MapGetFirstElementAt(tilePosition);
+                if (element == nullptr)
+                {
+                    return false;
+                }
+
+                while (true)
+                {
+                    const bool lastForTile = element->isLastForTile();
+                    const auto* path = element->asPath();
+                    if (path != nullptr && !callback(MakePathData(*path, x, y)))
+                    {
+                        return false;
+                    }
+                    if (lastForTile)
+                    {
+                        break;
+                    }
+                    ++element;
+                }
+            }
+        }
+        return true;
     }
 
     int32_t SetError(Rct3DOpenRCT2Status status, const char* message)
@@ -343,6 +450,110 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying map surface data raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_path_count(Rct3DOpenRCT2Context* context, uint64_t* count)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (count == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The path count output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            *count = 0;
+            if (!ForEachPath([&count](const Rct3DOpenRCT2PathData&) {
+                    ++*count;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting paths.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting map paths raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_path_data(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PathData* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            const auto& mapSize = OpenRCT2::getGameState().mapSize;
+            if (mapSize.x <= 0 || mapSize.y <= 0)
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "The loaded map dimensions are invalid.");
+            }
+
+            uint64_t required = 0;
+            if (!ForEachPath([&required](const Rct3DOpenRCT2PathData&) {
+                    ++required;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting paths.");
+            }
+            if (capacity < required)
+            {
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The path data buffer is smaller than the loaded path count.");
+            }
+            if (required > 0 && output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The path data output pointer is null.");
+            }
+
+            uint64_t index = 0;
+            if (!ForEachPath([&](const Rct3DOpenRCT2PathData& path) {
+                    output[index++] = path;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while copying paths.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying map path data raised an unknown error.");
         }
     }
 

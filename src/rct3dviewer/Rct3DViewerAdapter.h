@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 5u
+#define RCT3D_OPENRCT2_ABI_VERSION 7u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -37,6 +37,29 @@ typedef struct Rct3DOpenRCT2SurfaceData
 	uint8_t west_corner_height;
 	uint16_t water_height;
 } Rct3DOpenRCT2SurfaceData;
+
+#pragma pack(push, 1)
+typedef struct Rct3DOpenRCT2PathData
+{
+	int32_t tile_x;
+	int32_t tile_y;
+	uint32_t surface_id_hash;
+	uint32_t railings_id_hash;
+	uint8_t base_z;
+	uint8_t slope_direction;
+	uint8_t edges;
+	uint8_t corners;
+	uint8_t flags;
+	uint8_t railings_support_type;
+	uint32_t addition_id_hash;
+	uint8_t addition_flags;
+} Rct3DOpenRCT2PathData;
+#pragma pack(pop)
+
+#define RCT3D_OPENRCT2_PATH_FLAG_SLOPED (1u << 0)
+#define RCT3D_OPENRCT2_PATH_FLAG_QUEUE (1u << 1)
+#define RCT3D_OPENRCT2_PATH_ADDITION_FLAG_LAMP (1u << 0)
+#define RCT3D_OPENRCT2_PATH_ADDITION_FLAG_BROKEN (1u << 1)
 
 typedef enum Rct3DOpenRCT2Status
 {
@@ -59,6 +82,10 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_map_dimensions(
 	Rct3DOpenRCT2Context* context, int32_t* width, int32_t* height);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_surface_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2SurfaceData* output, uint64_t capacity);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_path_count(
+	Rct3DOpenRCT2Context* context, uint64_t* count);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_path_data(
+	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PathData* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT const char* rct3d_openrct2_get_last_error(void);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_shutdown(Rct3DOpenRCT2Context* context);
 
