@@ -32,7 +32,7 @@
 #include <string_view>
 #include <thread>
 
-static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 12);
+static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 27);
 
 struct Rct3DOpenRCT2Context
@@ -426,6 +426,7 @@ extern "C"
                     const auto* surfaceObject = OpenRCT2::TerrainSurfaceObject::GetById(surface->getSurfaceObjectIndex());
                     const auto surfaceIdHash = surfaceObject == nullptr ? 0u : HashTerrainSurfaceIdentifier(surfaceObject->GetIdentifier());
                     const auto waterHeight = surface->getWaterHeight();
+                    const auto grassState = static_cast<uint8_t>(surface->getGrassLength() & 0x7);
 
                     output[index] = {
                         surfaceIdHash,
@@ -436,6 +437,9 @@ extern "C"
                         cornerHeights.top,
                         cornerHeights.right,
                         static_cast<uint16_t>(waterHeight > surface->getBaseZ() ? waterHeight : 0),
+                        grassState,
+                        static_cast<uint8_t>(surface->canGrassGrow()),
+                        { 0, 0 },
                     };
                 }
             }

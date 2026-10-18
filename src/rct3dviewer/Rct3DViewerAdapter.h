@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 7u
+#define RCT3D_OPENRCT2_ABI_VERSION 8u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -36,6 +36,9 @@ typedef struct Rct3DOpenRCT2SurfaceData
 	uint8_t south_corner_height;
 	uint8_t west_corner_height;
 	uint16_t water_height;
+	uint8_t grass_state;
+	uint8_t can_grow_grass;
+	uint8_t reserved[2];
 } Rct3DOpenRCT2SurfaceData;
 
 #pragma pack(push, 1)
