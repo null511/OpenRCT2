@@ -315,22 +315,20 @@ extern "C"
 
                     const auto index = static_cast<uint64_t>(y) * static_cast<uint64_t>(mapSize.x)
                         + static_cast<uint64_t>(x);
-            const auto cornerHeights = OpenRCT2::GetSlopeRelativeCornerHeights(surface->getSlope());
-            const auto* surfaceObject = OpenRCT2::TerrainSurfaceObject::GetById(surface->getSurfaceObjectIndex());
-            const auto mapColour = surfaceObject == nullptr
-                ? 0
-                : static_cast<uint8_t>(surfaceObject->getMapColours(surface->getPrimarySurfaceColour())[0]);
-            const auto surfaceIdHash = surfaceObject == nullptr ? 0u : HashTerrainSurfaceIdentifier(surfaceObject->GetIdentifier());
-            output[index] = {
-                surfaceIdHash,
-                surface->baseHeight,
-                surface->getSlope(),
-                cornerHeights.bottom,
-                cornerHeights.left,
-                cornerHeights.top,
-                cornerHeights.right,
-                static_cast<uint8_t>(mapColour),
-                0,
+                    const auto cornerHeights = OpenRCT2::GetSlopeRelativeCornerHeights(surface->getSlope());
+                    const auto* surfaceObject = OpenRCT2::TerrainSurfaceObject::GetById(surface->getSurfaceObjectIndex());
+                    const auto surfaceIdHash = surfaceObject == nullptr ? 0u : HashTerrainSurfaceIdentifier(surfaceObject->GetIdentifier());
+                    const auto waterHeight = surface->getWaterHeight();
+
+                    output[index] = {
+                        surfaceIdHash,
+                        surface->baseHeight,
+                        surface->getSlope(),
+                        cornerHeights.bottom,
+                        cornerHeights.left,
+                        cornerHeights.top,
+                        cornerHeights.right,
+                        static_cast<uint16_t>(waterHeight > surface->getBaseZ() ? waterHeight : 0),
                     };
                 }
             }

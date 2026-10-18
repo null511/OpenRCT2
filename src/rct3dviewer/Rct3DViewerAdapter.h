@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 4u
+#define RCT3D_OPENRCT2_ABI_VERSION 5u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -35,8 +35,7 @@ typedef struct Rct3DOpenRCT2SurfaceData
 	uint8_t east_corner_height;
 	uint8_t south_corner_height;
 	uint8_t west_corner_height;
-	uint8_t map_colour;
-	uint8_t reserved;
+	uint16_t water_height;
 } Rct3DOpenRCT2SurfaceData;
 
 typedef enum Rct3DOpenRCT2Status
