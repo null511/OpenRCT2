@@ -8,6 +8,7 @@
 #include "Rct3DViewerAdapter.h"
 
 #include "../openrct2/Context.h"
+#include "../openrct2/entity/EntityList.h"
 #include "../openrct2/GameState.h"
 #include "../openrct2/OpenRCT2.h"
 #include "../openrct2/PlatformEnvironment.h"
@@ -19,6 +20,8 @@
 #include "../openrct2/object/PathAdditionEntry.h"
 #include "../openrct2/paint/tile_element/Paint.Path.h"
 #include "../openrct2/object/TerrainSurfaceObject.h"
+#include "../openrct2/ride/Vehicle.h"
+#include "../openrct2/ride/VehicleGeometry.h"
 #include "../openrct2/world/Footpath.h"
 #include "../openrct2/world/Map.h"
 #include "../openrct2/world/tile_element/Slope.h"
@@ -27,6 +30,9 @@
 #include "../openrct2/world/tile_element/TileElement.h"
 
 #include <filesystem>
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -35,6 +41,7 @@
 
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
+static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
 
 struct Rct3DOpenRCT2Context
 {
@@ -161,6 +168,100 @@ namespace
             }
         }
         return true;
+    }
+
+    bool VehicleHasTrackPitchAndRoll(const OpenRCT2::Vehicle& vehicle)
+    {
+        switch (vehicle.status)
+        {
+            case OpenRCT2::Vehicle::Status::travellingDodgems:
+            case OpenRCT2::Vehicle::Status::swinging:
+            case OpenRCT2::Vehicle::Status::rotating:
+            case OpenRCT2::Vehicle::Status::ferrisWheelRotating:
+            case OpenRCT2::Vehicle::Status::simulatorOperating:
+            case OpenRCT2::Vehicle::Status::showingFilm:
+            case OpenRCT2::Vehicle::Status::spaceRingsOperating:
+            case OpenRCT2::Vehicle::Status::topSpinOperating:
+            case OpenRCT2::Vehicle::Status::hauntedHouseOperating:
+            case OpenRCT2::Vehicle::Status::doingCircusShow:
+            case OpenRCT2::Vehicle::Status::crookedHouseOperating:
+            case OpenRCT2::Vehicle::Status::operating1A:
+            case OpenRCT2::Vehicle::Status::stopping1B:
+            case OpenRCT2::Vehicle::Status::unloadingPassengers1C:
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    float GetVehiclePitchRadians(const OpenRCT2::Vehicle& vehicle)
+    {
+        if (!VehicleHasTrackPitchAndRoll(vehicle) || vehicle.pitch >= VehiclePitch::pitchCount)
+        {
+            return 0.0f;
+        }
+
+        const auto pitchVector = OpenRCT2::RideVehicle::Geometry::getPitchVector32(vehicle.pitch);
+        return static_cast<float>(std::atan2(static_cast<double>(pitchVector.y), static_cast<double>(pitchVector.x)));
+    }
+
+    float GetVehicleRollRadians(const OpenRCT2::Vehicle& vehicle)
+    {
+        if (!VehicleHasTrackPitchAndRoll(vehicle) || vehicle.roll >= VehicleRoll::rollCount)
+        {
+            return 0.0f;
+        }
+
+        double sign = 1.0;
+        switch (vehicle.roll)
+        {
+            case VehicleRoll::right22:
+            case VehicleRoll::right45:
+            case VehicleRoll::right67:
+            case VehicleRoll::right90:
+            case VehicleRoll::right112:
+            case VehicleRoll::right135:
+            case VehicleRoll::right157:
+            case VehicleRoll::uninvertingRight22:
+            case VehicleRoll::uninvertingRight45:
+                sign = -1.0;
+                break;
+            default:
+                break;
+        }
+
+        const auto horizontalComponent = OpenRCT2::RideVehicle::Geometry::getRollHorizontalComponent(vehicle.roll);
+        const auto cosine = static_cast<double>(horizontalComponent) / std::numeric_limits<int32_t>::max();
+        return static_cast<float>(sign * std::acos(std::clamp(cosine, -1.0, 1.0)));
+    }
+
+    Rct3DOpenRCT2VehicleData MakeVehicleData(const OpenRCT2::Vehicle& vehicle)
+    {
+        return {
+            vehicle.id.ToUnderlying(),
+            vehicle.x,
+            vehicle.y,
+            vehicle.z,
+            vehicle.orientation,
+            static_cast<uint8_t>(vehicle.pitch),
+            static_cast<uint8_t>(vehicle.roll),
+            0,
+            GetVehiclePitchRadians(vehicle),
+            GetVehicleRollRadians(vehicle),
+        };
+    }
+
+    template<typename TCallback>
+    void ForEachPositionedVehicle(TCallback&& callback)
+    {
+        for (auto* vehicle : OpenRCT2::EntityList<OpenRCT2::Vehicle>())
+        {
+            if (vehicle->x == kLocationNull || vehicle->y == kLocationNull || vehicle->z == kLocationNull)
+            {
+                continue;
+            }
+            callback(MakeVehicleData(*vehicle));
+        }
     }
 
     int32_t SetError(Rct3DOpenRCT2Status status, const char* message)
@@ -560,6 +661,117 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying map path data raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_advance_simulation(Rct3DOpenRCT2Context* context)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            OpenRCT2::gameStateUpdateLogic();
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Advancing the simulation raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_vehicle_count(Rct3DOpenRCT2Context* context, uint64_t* count)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (count == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The vehicle count output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            *count = 0;
+            ForEachPositionedVehicle([&count](const Rct3DOpenRCT2VehicleData&) { ++*count; });
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting positioned ride vehicles raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_vehicle_data(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2VehicleData* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            uint64_t required = 0;
+            ForEachPositionedVehicle([&required](const Rct3DOpenRCT2VehicleData&) { ++required; });
+            if (capacity < required)
+            {
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The vehicle data buffer is smaller than the positioned vehicle count.");
+            }
+            if (required > 0 && output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The vehicle data output pointer is null.");
+            }
+
+            uint64_t index = 0;
+            ForEachPositionedVehicle([&](const Rct3DOpenRCT2VehicleData& vehicle) { output[index++] = vehicle; });
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying positioned ride vehicle data raised an unknown error.");
         }
     }
 

@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 9u
+#define RCT3D_OPENRCT2_ABI_VERSION 11u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -60,6 +60,20 @@ typedef struct Rct3DOpenRCT2PathData
 } Rct3DOpenRCT2PathData;
 #pragma pack(pop)
 
+typedef struct Rct3DOpenRCT2VehicleData
+{
+	uint16_t entity_id;
+	int32_t x;
+	int32_t y;
+	int32_t z;
+	uint8_t orientation;
+	uint8_t pitch;
+	uint8_t roll;
+	uint8_t reserved;
+	float pitch_radians;
+	float roll_radians;
+} Rct3DOpenRCT2VehicleData;
+
 #define RCT3D_OPENRCT2_PATH_FLAG_SLOPED (1u << 0)
 #define RCT3D_OPENRCT2_PATH_FLAG_QUEUE (1u << 1)
 #define RCT3D_OPENRCT2_PATH_ADDITION_FLAG_LAMP (1u << 0)
@@ -90,6 +104,11 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_path_count(
 	Rct3DOpenRCT2Context* context, uint64_t* count);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_path_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PathData* output, uint64_t capacity);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_advance_simulation(Rct3DOpenRCT2Context* context);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_vehicle_count(
+	Rct3DOpenRCT2Context* context, uint64_t* count);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_vehicle_data(
+	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2VehicleData* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT const char* rct3d_openrct2_get_last_error(void);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_shutdown(Rct3DOpenRCT2Context* context);
 
