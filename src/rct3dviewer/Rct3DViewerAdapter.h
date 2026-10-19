@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 8u
+#define RCT3D_OPENRCT2_ABI_VERSION 9u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -54,6 +54,7 @@ typedef struct Rct3DOpenRCT2PathData
 	uint8_t corners;
 	uint8_t flags;
 	uint8_t railings_support_type;
+	uint8_t support_orientation;
 	uint32_t addition_id_hash;
 	uint8_t addition_flags;
 } Rct3DOpenRCT2PathData;

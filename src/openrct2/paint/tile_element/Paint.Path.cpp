@@ -103,6 +103,11 @@ static constexpr WoodenSupportSubType PathSupportOrientation[] = {
 };
 // clang-format on
 
+WoodenSupportSubType OpenRCT2::GetPathSupportOrientation(uint8_t edges)
+{
+    return PathSupportOrientation[edges & FOOTPATH_PROPERTIES_EDGES_EDGES_MASK];
+}
+
 static void PathPaintBoxSupport(
     PaintSession& session, const PathElement& pathElement, int32_t height, const FootpathPaintInfo& pathPaintInfo,
     bool hasSupports, ImageId imageTemplate, ImageId sceneryImageTemplate);

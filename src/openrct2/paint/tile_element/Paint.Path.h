@@ -12,10 +12,13 @@
 #include <cstdint>
 
 struct PaintSession;
+enum class WoodenSupportSubType : uint8_t;
 
 namespace OpenRCT2
 {
     struct PathElement;
+
+    ::WoodenSupportSubType GetPathSupportOrientation(uint8_t edges);
 }
 
 void PaintPath(PaintSession& session, uint16_t height, const OpenRCT2::PathElement& tileElement);

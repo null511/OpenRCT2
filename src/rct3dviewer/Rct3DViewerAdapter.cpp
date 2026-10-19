@@ -17,6 +17,7 @@
 #include "../openrct2/object/FootpathRailingsObject.h"
 #include "../openrct2/object/FootpathSurfaceObject.h"
 #include "../openrct2/object/PathAdditionEntry.h"
+#include "../openrct2/paint/tile_element/Paint.Path.h"
 #include "../openrct2/object/TerrainSurfaceObject.h"
 #include "../openrct2/world/Footpath.h"
 #include "../openrct2/world/Map.h"
@@ -33,7 +34,7 @@
 #include <thread>
 
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
-static_assert(sizeof(Rct3DOpenRCT2PathData) == 27);
+static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 
 struct Rct3DOpenRCT2Context
 {
@@ -122,6 +123,7 @@ namespace
             flags,
             railingsDescriptor == nullptr ? static_cast<uint8_t>(OpenRCT2::RailingEntrySupportType::box)
                                            : static_cast<uint8_t>(railingsDescriptor->supportType),
+            static_cast<uint8_t>(OpenRCT2::GetPathSupportOrientation(path.getEdges())),
             additionObject == nullptr ? 0u : HashPathObjectIdentifier(additionObject->GetIdentifier()),
             additionFlags,
         };
