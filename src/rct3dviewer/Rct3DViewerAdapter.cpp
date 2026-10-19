@@ -113,6 +113,10 @@ namespace
         {
             additionFlags |= RCT3D_OPENRCT2_PATH_ADDITION_FLAG_LAMP;
         }
+        if (additionEntry != nullptr && additionEntry->flags.has(OpenRCT2::PathAdditionFlag::isBench))
+        {
+            additionFlags |= RCT3D_OPENRCT2_PATH_ADDITION_FLAG_BENCH;
+        }
         if (path.isBroken())
         {
             additionFlags |= RCT3D_OPENRCT2_PATH_ADDITION_FLAG_BROKEN;

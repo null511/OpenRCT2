@@ -78,6 +78,7 @@ typedef struct Rct3DOpenRCT2VehicleData
 #define RCT3D_OPENRCT2_PATH_FLAG_QUEUE (1u << 1)
 #define RCT3D_OPENRCT2_PATH_ADDITION_FLAG_LAMP (1u << 0)
 #define RCT3D_OPENRCT2_PATH_ADDITION_FLAG_BROKEN (1u << 1)
+#define RCT3D_OPENRCT2_PATH_ADDITION_FLAG_BENCH (1u << 2)
 
 typedef enum Rct3DOpenRCT2Status
 {
