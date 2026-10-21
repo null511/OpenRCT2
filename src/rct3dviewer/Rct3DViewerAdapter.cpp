@@ -8,6 +8,7 @@
 #include "Rct3DViewerAdapter.h"
 
 #include "../openrct2/Context.h"
+#include "../openrct2/Date.h"
 #include "../openrct2/entity/EntityList.h"
 #include "../openrct2/GameState.h"
 #include "../openrct2/OpenRCT2.h"
@@ -696,6 +697,44 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Advancing the simulation raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_time_of_day_hours(Rct3DOpenRCT2Context* context, float* hours)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (hours == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The time-of-day output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            const auto& date = OpenRCT2::getGameState().date;
+            const auto daysInMonth = OpenRCT2::Date::GetDaysInMonth(date.GetMonth());
+            const auto ticksWithinDay = (static_cast<uint32_t>(date.monthTicks) * daysInMonth) & 0xFFFF;
+            *hours = static_cast<float>(ticksWithinDay) * (24.0f / 65536.0f);
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Reading the simulated time of day raised an unknown error.");
         }
     }
 

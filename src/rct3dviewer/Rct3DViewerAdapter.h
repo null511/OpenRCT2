@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 11u
+#define RCT3D_OPENRCT2_ABI_VERSION 12u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -106,6 +106,8 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_path_count(
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_path_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PathData* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_advance_simulation(Rct3DOpenRCT2Context* context);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_time_of_day_hours(
+	Rct3DOpenRCT2Context* context, float* hours);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_vehicle_count(
 	Rct3DOpenRCT2Context* context, uint64_t* count);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_vehicle_data(
