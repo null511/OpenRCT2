@@ -53,7 +53,7 @@
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 27);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
@@ -226,6 +226,17 @@ namespace
         const auto mainPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.main, 6);
         const auto additionalPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.additional, 6);
         const auto& descriptor = OpenRCT2::TrackMetadata::GetTrackElementDescriptor(track.getTrackType());
+        const auto getRollSign = [](OpenRCT2::TrackMetadata::TrackRoll roll) -> int8_t {
+            switch (roll)
+            {
+                case OpenRCT2::TrackMetadata::TrackRoll::left:
+                    return 1;
+                case OpenRCT2::TrackMetadata::TrackRoll::right:
+                    return -1;
+                default:
+                    return 0;
+            }
+        };
         const auto sequence = track.getSequenceIndex();
         if (sequence >= descriptor.sequenceData.numSequences)
         {
@@ -268,6 +279,8 @@ namespace
             static_cast<int8_t>(splineZEnd),
             track.getRideIndex().ToUnderlying(),
             static_cast<uint16_t>(track.getRideType()),
+            getRollSign(descriptor.definition.rollStart),
+            getRollSign(descriptor.definition.rollEnd),
         };
     }
 
@@ -297,7 +310,8 @@ namespace
                     const auto* track = element->asTrack();
                     if (track != nullptr
                         && (track->getRideType() == OpenRCT2::RIDE_TYPE_MONORAIL
-                            || track->getRideType() == OpenRCT2::RIDE_TYPE_MINIATURE_RAILWAY)
+                            || track->getRideType() == OpenRCT2::RIDE_TYPE_MINIATURE_RAILWAY
+                            || track->getRideType() == OpenRCT2::RIDE_TYPE_CLASSIC_MINI_ROLLER_COASTER)
                         && !callback(MakeTrackData(*track, x, y)))
                     {
                         return false;
