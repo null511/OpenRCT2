@@ -53,7 +53,7 @@
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 23);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 25);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
@@ -236,11 +236,16 @@ namespace
         const auto offsetX = (sequenceClearance.x - sequenceOrigin.x) / 32;
         const auto offsetY = (sequenceClearance.y - sequenceOrigin.y) / 32;
         const auto offsetZ = (sequenceClearance.z - sequenceOrigin.z) / 8;
+        const auto splineZBegin = descriptor.coordinates.zBegin / 8;
+        const auto splineZEnd = descriptor.coordinates.zEnd / 8;
         if ((sequenceClearance.x - sequenceOrigin.x) % 32 != 0 || (sequenceClearance.y - sequenceOrigin.y) % 32 != 0
             || (sequenceClearance.z - sequenceOrigin.z) % 8 != 0
+            || descriptor.coordinates.zBegin % 8 != 0 || descriptor.coordinates.zEnd % 8 != 0
             || offsetX < std::numeric_limits<int8_t>::min() || offsetX > std::numeric_limits<int8_t>::max()
             || offsetY < std::numeric_limits<int8_t>::min() || offsetY > std::numeric_limits<int8_t>::max()
-            || offsetZ < std::numeric_limits<int8_t>::min() || offsetZ > std::numeric_limits<int8_t>::max())
+            || offsetZ < std::numeric_limits<int8_t>::min() || offsetZ > std::numeric_limits<int8_t>::max()
+            || splineZBegin < std::numeric_limits<int8_t>::min() || splineZBegin > std::numeric_limits<int8_t>::max()
+            || splineZEnd < std::numeric_limits<int8_t>::min() || splineZEnd > std::numeric_limits<int8_t>::max())
         {
             throw std::runtime_error("OpenRCT2 returned an unsupported monorail sequence tile offset.");
         }
@@ -259,6 +264,8 @@ namespace
             static_cast<int8_t>(offsetZ),
             descriptor.coordinates.rotationBegin,
             descriptor.coordinates.rotationEnd,
+            static_cast<int8_t>(splineZBegin),
+            static_cast<int8_t>(splineZEnd),
             track.getRideIndex().ToUnderlying(),
         };
     }
