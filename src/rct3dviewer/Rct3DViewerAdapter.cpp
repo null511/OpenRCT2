@@ -53,7 +53,7 @@
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 25);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 27);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
@@ -213,13 +213,13 @@ namespace
         const auto* ride = OpenRCT2::GetRide(track.getRideIndex());
         if (ride == nullptr)
         {
-            throw std::runtime_error("A monorail track element refers to a missing ride.");
+            throw std::runtime_error("A track element refers to a missing ride.");
         }
 
         const auto colourScheme = track.getColourScheme();
         if (colourScheme >= kNumRideColourSchemes)
         {
-            throw std::runtime_error("A monorail track element has an invalid colour scheme.");
+            throw std::runtime_error("A track element has an invalid colour scheme.");
         }
 
         const auto& colours = ride->trackColours[colourScheme];
@@ -229,7 +229,7 @@ namespace
         const auto sequence = track.getSequenceIndex();
         if (sequence >= descriptor.sequenceData.numSequences)
         {
-            throw std::runtime_error("A monorail track element has an invalid sequence index.");
+            throw std::runtime_error("A track element has an invalid sequence index.");
         }
         const auto& sequenceOrigin = descriptor.sequenceData.sequences[0].clearance;
         const auto& sequenceClearance = descriptor.sequenceData.sequences[sequence].clearance;
@@ -247,7 +247,7 @@ namespace
             || splineZBegin < std::numeric_limits<int8_t>::min() || splineZBegin > std::numeric_limits<int8_t>::max()
             || splineZEnd < std::numeric_limits<int8_t>::min() || splineZEnd > std::numeric_limits<int8_t>::max())
         {
-            throw std::runtime_error("OpenRCT2 returned an unsupported monorail sequence tile offset.");
+            throw std::runtime_error("OpenRCT2 returned an unsupported track sequence tile offset.");
         }
         return {
             tileX,
@@ -267,11 +267,12 @@ namespace
             static_cast<int8_t>(splineZBegin),
             static_cast<int8_t>(splineZEnd),
             track.getRideIndex().ToUnderlying(),
+            static_cast<uint16_t>(track.getRideType()),
         };
     }
 
     template<typename TCallback>
-    bool ForEachMonorailTrack(TCallback&& callback)
+    bool ForEachTrack(TCallback&& callback)
     {
         {
             ScopedNoGraphicsOverride graphicsDataAccess;
@@ -294,7 +295,9 @@ namespace
                 {
                     const bool lastForTile = element->isLastForTile();
                     const auto* track = element->asTrack();
-                    if (track != nullptr && track->getRideType() == OpenRCT2::RIDE_TYPE_MONORAIL
+                    if (track != nullptr
+                        && (track->getRideType() == OpenRCT2::RIDE_TYPE_MONORAIL
+                            || track->getRideType() == OpenRCT2::RIDE_TYPE_MINIATURE_RAILWAY)
                         && !callback(MakeTrackData(*track, x, y)))
                     {
                         return false;
@@ -863,12 +866,12 @@ extern "C"
             }
 
             *count = 0;
-            if (!ForEachMonorailTrack([&count](const Rct3DOpenRCT2TrackData&) {
+            if (!ForEachTrack([&count](const Rct3DOpenRCT2TrackData&) {
                     ++*count;
                     return true;
                 }))
             {
-                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting monorail track.");
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting track.");
             }
             return RCT3D_OPENRCT2_OK;
         }
@@ -879,7 +882,7 @@ extern "C"
         }
         catch (...)
         {
-            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting monorail track raised an unknown error.");
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting track raised an unknown error.");
         }
     }
 
@@ -902,16 +905,16 @@ extern "C"
             }
 
             uint64_t required = 0;
-            if (!ForEachMonorailTrack([&required](const Rct3DOpenRCT2TrackData&) {
+            if (!ForEachTrack([&required](const Rct3DOpenRCT2TrackData&) {
                     ++required;
                     return true;
                 }))
             {
-                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting monorail track.");
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting track.");
             }
             if (capacity < required)
             {
-                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The track data buffer is smaller than the loaded monorail track count.");
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The track data buffer is smaller than the loaded track count.");
             }
             if (required > 0 && output == nullptr)
             {
@@ -919,12 +922,12 @@ extern "C"
             }
 
             uint64_t index = 0;
-            if (!ForEachMonorailTrack([&](const Rct3DOpenRCT2TrackData& track) {
+            if (!ForEachTrack([&](const Rct3DOpenRCT2TrackData& track) {
                     output[index++] = track;
                     return true;
                 }))
             {
-                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while copying monorail track.");
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while copying track.");
             }
             return RCT3D_OPENRCT2_OK;
         }
@@ -935,7 +938,7 @@ extern "C"
         }
         catch (...)
         {
-            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying monorail track raised an unknown error.");
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying track raised an unknown error.");
         }
     }
 

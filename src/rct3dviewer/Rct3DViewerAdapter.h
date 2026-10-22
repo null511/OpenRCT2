@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 16u
+#define RCT3D_OPENRCT2_ABI_VERSION 17u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -94,6 +94,7 @@ typedef struct Rct3DOpenRCT2TrackData
 	int8_t spline_z_begin;
 	int8_t spline_z_end;
 	uint16_t ride_id;
+	uint16_t ride_type;
 } Rct3DOpenRCT2TrackData;
 
 typedef struct Rct3DOpenRCT2PaletteEntry
