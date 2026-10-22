@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 12u
+#define RCT3D_OPENRCT2_ABI_VERSION 15u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -74,6 +74,35 @@ typedef struct Rct3DOpenRCT2VehicleData
 	float roll_radians;
 } Rct3DOpenRCT2VehicleData;
 
+#pragma pack(push, 1)
+typedef struct Rct3DOpenRCT2TrackData
+{
+	int32_t tile_x;
+	int32_t tile_y;
+	uint16_t track_type;
+	uint8_t sequence;
+	uint8_t direction;
+	uint8_t base_height;
+	uint8_t main_palette_index;
+	uint8_t additional_palette_index;
+	uint8_t sequence_count;
+	int8_t sequence_offset_x;
+	int8_t sequence_offset_y;
+	int8_t sequence_offset_z;
+	int8_t rotation_begin;
+	int8_t rotation_end;
+	uint16_t ride_id;
+} Rct3DOpenRCT2TrackData;
+
+typedef struct Rct3DOpenRCT2PaletteEntry
+{
+	uint8_t red;
+	uint8_t green;
+	uint8_t blue;
+	uint8_t alpha;
+} Rct3DOpenRCT2PaletteEntry;
+#pragma pack(pop)
+
 #define RCT3D_OPENRCT2_PATH_FLAG_SLOPED (1u << 0)
 #define RCT3D_OPENRCT2_PATH_FLAG_QUEUE (1u << 1)
 #define RCT3D_OPENRCT2_PATH_ADDITION_FLAG_LAMP (1u << 0)
@@ -94,7 +123,8 @@ typedef enum Rct3DOpenRCT2Status
 
 RCT3D_OPENRCT2_EXPORT uint32_t rct3d_openrct2_get_abi_version(void);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_initialize(
-	const char* openrct2_path_utf8, const char* rct2_path_utf8, Rct3DOpenRCT2Context** out_context);
+	const char* openrct2_path_utf8, const char* rct2_path_utf8, const char* rct1_path_utf8,
+	Rct3DOpenRCT2Context** out_context);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_load_park(
 	Rct3DOpenRCT2Context* context, const char* park_path_utf8);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_map_dimensions(
@@ -105,6 +135,12 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_path_count(
 	Rct3DOpenRCT2Context* context, uint64_t* count);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_path_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PathData* output, uint64_t capacity);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_track_count(
+	Rct3DOpenRCT2Context* context, uint64_t* count);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_track_data(
+	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2TrackData* output, uint64_t capacity);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_palette_data(
+	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PaletteEntry* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_advance_simulation(Rct3DOpenRCT2Context* context);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_time_of_day_hours(
 	Rct3DOpenRCT2Context* context, float* hours);

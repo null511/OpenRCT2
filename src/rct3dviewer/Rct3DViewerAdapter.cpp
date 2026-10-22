@@ -13,6 +13,11 @@
 #include "../openrct2/GameState.h"
 #include "../openrct2/OpenRCT2.h"
 #include "../openrct2/PlatformEnvironment.h"
+#include "../openrct2/drawing/ColourMap.h"
+#include "../openrct2/drawing/Drawing.Sprite.h"
+#include "../openrct2/drawing/Palette.h"
+#include "../openrct2/drawing/PaletteType.h"
+#include "../openrct2/object/WaterEntry.h"
 #include "../openrct2/object/Object.h"
 #include "../openrct2/object/ObjectManager.h"
 #include "../openrct2/object/FootpathObject.h"
@@ -23,11 +28,16 @@
 #include "../openrct2/object/TerrainSurfaceObject.h"
 #include "../openrct2/ride/Vehicle.h"
 #include "../openrct2/ride/VehicleGeometry.h"
+#include "../openrct2/ride/Ride.h"
+#include "../openrct2/ride/TrackData.h"
+#include "../openrct2/ride/ted/TrackElementDescriptor.h"
+#include "../openrct2/ride/RideColour.h"
 #include "../openrct2/world/Footpath.h"
 #include "../openrct2/world/Map.h"
 #include "../openrct2/world/tile_element/Slope.h"
 #include "../openrct2/world/tile_element/PathElement.h"
 #include "../openrct2/world/tile_element/SurfaceElement.h"
+#include "../openrct2/world/tile_element/TrackElement.h"
 #include "../openrct2/world/tile_element/TileElement.h"
 
 #include <filesystem>
@@ -43,6 +53,8 @@
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 23);
+static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
 {
@@ -52,8 +64,8 @@ struct Rct3DOpenRCT2Context
     bool previousHeadless = false;
     bool previousNoGraphics = false;
     bool processSettingsCaptured = false;
-    std::string previousOpenRCT2DataPath;
-    std::string previousRCT2DataPath;
+    bool paletteG1Loaded = false;
+    bool paletteGxLoaded = false;
 };
 
 namespace
@@ -61,6 +73,27 @@ namespace
     std::mutex gAdapterMutex;
     Rct3DOpenRCT2Context* gActiveContext = nullptr;
     thread_local std::string gLastError;
+
+    class ScopedNoGraphicsOverride
+    {
+    public:
+        ScopedNoGraphicsOverride()
+            : _previousValue(gOpenRCT2NoGraphics)
+        {
+            gOpenRCT2NoGraphics = false;
+        }
+
+        ~ScopedNoGraphicsOverride()
+        {
+            gOpenRCT2NoGraphics = _previousValue;
+        }
+
+        ScopedNoGraphicsOverride(const ScopedNoGraphicsOverride&) = delete;
+        ScopedNoGraphicsOverride& operator=(const ScopedNoGraphicsOverride&) = delete;
+
+    private:
+        bool _previousValue;
+    };
 
     uint32_t HashTerrainSurfaceIdentifier(std::string_view identifier)
     {
@@ -161,6 +194,101 @@ namespace
                     const bool lastForTile = element->isLastForTile();
                     const auto* path = element->asPath();
                     if (path != nullptr && !callback(MakePathData(*path, x, y)))
+                    {
+                        return false;
+                    }
+                    if (lastForTile)
+                    {
+                        break;
+                    }
+                    ++element;
+                }
+            }
+        }
+        return true;
+    }
+
+    Rct3DOpenRCT2TrackData MakeTrackData(const OpenRCT2::TrackElement& track, int32_t tileX, int32_t tileY)
+    {
+        const auto* ride = OpenRCT2::GetRide(track.getRideIndex());
+        if (ride == nullptr)
+        {
+            throw std::runtime_error("A monorail track element refers to a missing ride.");
+        }
+
+        const auto colourScheme = track.getColourScheme();
+        if (colourScheme >= kNumRideColourSchemes)
+        {
+            throw std::runtime_error("A monorail track element has an invalid colour scheme.");
+        }
+
+        const auto& colours = ride->trackColours[colourScheme];
+        const auto mainPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.main, 6);
+        const auto additionalPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.additional, 6);
+        const auto& descriptor = OpenRCT2::TrackMetadata::GetTrackElementDescriptor(track.getTrackType());
+        const auto sequence = track.getSequenceIndex();
+        if (sequence >= descriptor.sequenceData.numSequences)
+        {
+            throw std::runtime_error("A monorail track element has an invalid sequence index.");
+        }
+        const auto& sequenceOrigin = descriptor.sequenceData.sequences[0].clearance;
+        const auto& sequenceClearance = descriptor.sequenceData.sequences[sequence].clearance;
+        const auto offsetX = (sequenceClearance.x - sequenceOrigin.x) / 32;
+        const auto offsetY = (sequenceClearance.y - sequenceOrigin.y) / 32;
+        const auto offsetZ = (sequenceClearance.z - sequenceOrigin.z) / 8;
+        if ((sequenceClearance.x - sequenceOrigin.x) % 32 != 0 || (sequenceClearance.y - sequenceOrigin.y) % 32 != 0
+            || (sequenceClearance.z - sequenceOrigin.z) % 8 != 0
+            || offsetX < std::numeric_limits<int8_t>::min() || offsetX > std::numeric_limits<int8_t>::max()
+            || offsetY < std::numeric_limits<int8_t>::min() || offsetY > std::numeric_limits<int8_t>::max()
+            || offsetZ < std::numeric_limits<int8_t>::min() || offsetZ > std::numeric_limits<int8_t>::max())
+        {
+            throw std::runtime_error("OpenRCT2 returned an unsupported monorail sequence tile offset.");
+        }
+        return {
+            tileX,
+            tileY,
+            static_cast<uint16_t>(track.getTrackType()),
+            sequence,
+            track.getDirection(),
+            track.baseHeight,
+            static_cast<uint8_t>(mainPaletteIndex),
+            static_cast<uint8_t>(additionalPaletteIndex),
+            descriptor.sequenceData.numSequences,
+            static_cast<int8_t>(offsetX),
+            static_cast<int8_t>(offsetY),
+            static_cast<int8_t>(offsetZ),
+            descriptor.coordinates.rotationBegin,
+            descriptor.coordinates.rotationEnd,
+            track.getRideIndex().ToUnderlying(),
+        };
+    }
+
+    template<typename TCallback>
+    bool ForEachMonorailTrack(TCallback&& callback)
+    {
+        {
+            ScopedNoGraphicsOverride graphicsDataAccess;
+            OpenRCT2::Drawing::initColourMaps();
+        }
+
+        const auto& mapSize = OpenRCT2::getGameState().mapSize;
+        for (int32_t y = 0; y < mapSize.y; ++y)
+        {
+            for (int32_t x = 0; x < mapSize.x; ++x)
+            {
+                const TileCoordsXY tilePosition(x, y);
+                auto* element = OpenRCT2::MapGetFirstElementAt(tilePosition);
+                if (element == nullptr)
+                {
+                    return false;
+                }
+
+                while (true)
+                {
+                    const bool lastForTile = element->isLastForTile();
+                    const auto* track = element->asTrack();
+                    if (track != nullptr && track->getRideType() == OpenRCT2::RIDE_TYPE_MONORAIL
+                        && !callback(MakeTrackData(*track, x, y)))
                     {
                         return false;
                     }
@@ -279,8 +407,6 @@ namespace
     {
         gOpenRCT2Headless = context.previousHeadless;
         gOpenRCT2NoGraphics = context.previousNoGraphics;
-        gCustomOpenRCT2DataPath = context.previousOpenRCT2DataPath;
-        gCustomRCT2DataPath = context.previousRCT2DataPath;
     }
 
     int32_t ValidateContext(Rct3DOpenRCT2Context* context)
@@ -305,7 +431,21 @@ namespace
             return;
         }
 
+        if (context->processSettingsCaptured)
+        {
+            gOpenRCT2NoGraphics = false;
+        }
         context->openrct2.reset();
+        if (context->paletteG1Loaded)
+        {
+            GfxUnloadG1();
+            context->paletteG1Loaded = false;
+        }
+        if (context->paletteGxLoaded)
+        {
+            GfxUnloadG2PalettesFontsTracks();
+            context->paletteGxLoaded = false;
+        }
         if (context->processSettingsCaptured)
         {
             RestoreProcessSettings(*context);
@@ -336,7 +476,8 @@ extern "C"
     }
 
     int32_t rct3d_openrct2_initialize(
-        const char* openrct2_path_utf8, const char* rct2_path_utf8, Rct3DOpenRCT2Context** out_context)
+        const char* openrct2_path_utf8, const char* rct2_path_utf8, const char* rct1_path_utf8,
+        Rct3DOpenRCT2Context** out_context)
     {
         std::unique_ptr<Rct3DOpenRCT2Context> context;
         try
@@ -350,10 +491,11 @@ extern "C"
             }
             *out_context = nullptr;
 
-            if (openrct2_path_utf8 == nullptr || rct2_path_utf8 == nullptr || openrct2_path_utf8[0] == '\0'
-                || rct2_path_utf8[0] == '\0')
+            if (openrct2_path_utf8 == nullptr || rct2_path_utf8 == nullptr || rct1_path_utf8 == nullptr
+                || openrct2_path_utf8[0] == '\0' || rct2_path_utf8[0] == '\0' || rct1_path_utf8[0] == '\0')
             {
-                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "Both OpenRCT2 and RCT2 data paths are required.");
+                return SetError(
+                    RCT3D_OPENRCT2_INVALID_ARGUMENT, "OpenRCT2, RCT2, and RCT1 data paths are all required.");
             }
 
             if (gActiveContext != nullptr)
@@ -361,27 +503,34 @@ extern "C"
                 return SetError(RCT3D_OPENRCT2_INVALID_STATE, "Only one OpenRCT2 context can be active in this process.");
             }
 
-            if (!std::filesystem::is_directory(std::filesystem::u8path(openrct2_path_utf8))
-                || !std::filesystem::is_directory(std::filesystem::u8path(rct2_path_utf8)))
+            if (!std::filesystem::is_directory(std::filesystem::u8path(openrct2_path_utf8)))
             {
-                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "An OpenRCT2 or RCT2 data directory does not exist.");
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The OpenRCT2 data directory does not exist.");
+            }
+            if (!std::filesystem::is_directory(std::filesystem::u8path(rct2_path_utf8)))
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The RCT2 data directory does not exist.");
+            }
+            if (!std::filesystem::is_directory(std::filesystem::u8path(rct1_path_utf8)))
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The RCT1 data directory does not exist.");
             }
 
             context = std::make_unique<Rct3DOpenRCT2Context>();
             context->ownerThread = std::this_thread::get_id();
             context->previousHeadless = gOpenRCT2Headless;
             context->previousNoGraphics = gOpenRCT2NoGraphics;
-            context->previousOpenRCT2DataPath = gCustomOpenRCT2DataPath;
-            context->previousRCT2DataPath = gCustomRCT2DataPath;
             context->processSettingsCaptured = true;
 
             gOpenRCT2Headless = true;
             gOpenRCT2NoGraphics = true;
             gCustomOpenRCT2DataPath = openrct2_path_utf8;
             gCustomRCT2DataPath = rct2_path_utf8;
+            gCustomRCT1DataPath = rct1_path_utf8;
 
             context->openrct2 = OpenRCT2::CreateContext();
             context->openrct2->GetPlatformEnvironment().SetBasePath(OpenRCT2::DirBase::rct2, rct2_path_utf8);
+            context->openrct2->GetPlatformEnvironment().SetBasePath(OpenRCT2::DirBase::rct1, rct1_path_utf8);
             context->openrct2->GetPlatformEnvironment().SetBasePath(OpenRCT2::DirBase::openrct2, openrct2_path_utf8);
             gActiveContext = context.get();
 
@@ -390,6 +539,15 @@ extern "C"
                 ReleaseContextResources(context.get());
                 return SetError(RCT3D_OPENRCT2_INITIALIZATION_FAILED, "OpenRCT2 context initialization failed.");
             }
+
+            if (!GfxLoadG1(context->openrct2->GetPlatformEnvironment()))
+            {
+                ReleaseContextResources(context.get());
+                return SetError(RCT3D_OPENRCT2_INITIALIZATION_FAILED, "OpenRCT2's base palette data could not be loaded.");
+            }
+            context->paletteG1Loaded = true;
+            GfxLoadG2PalettesFontsTracks();
+            context->paletteGxLoaded = true;
 
             *out_context = context.release();
             return RCT3D_OPENRCT2_OK;
@@ -432,7 +590,14 @@ extern "C"
                 return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The park file path is empty.");
             }
 
-            if (!context->openrct2->LoadParkFromFile(park_path_utf8))
+            bool parkLoaded = false;
+            {
+                // No-graphics mode skips object image/palette data while loading the park.
+                // Keep the process headless, but temporarily allow that data to be read.
+                ScopedNoGraphicsOverride graphicsDataAccess;
+                parkLoaded = context->openrct2->LoadParkFromFile(park_path_utf8);
+            }
+            if (!parkLoaded)
             {
                 context->parkLoaded = false;
                 return SetError(RCT3D_OPENRCT2_PARK_LOAD_FAILED, "OpenRCT2 failed to load the park file.");
@@ -666,6 +831,153 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying map path data raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_track_count(Rct3DOpenRCT2Context* context, uint64_t* count)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (count == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The track count output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            *count = 0;
+            if (!ForEachMonorailTrack([&count](const Rct3DOpenRCT2TrackData&) {
+                    ++*count;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting monorail track.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting monorail track raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_track_data(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2TrackData* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            uint64_t required = 0;
+            if (!ForEachMonorailTrack([&required](const Rct3DOpenRCT2TrackData&) {
+                    ++required;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting monorail track.");
+            }
+            if (capacity < required)
+            {
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The track data buffer is smaller than the loaded monorail track count.");
+            }
+            if (required > 0 && output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The track data output pointer is null.");
+            }
+
+            uint64_t index = 0;
+            if (!ForEachMonorailTrack([&](const Rct3DOpenRCT2TrackData& track) {
+                    output[index++] = track;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while copying monorail track.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying monorail track raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_palette_data(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PaletteEntry* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+            if (capacity < 256)
+            {
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The palette buffer must contain 256 entries.");
+            }
+            if (output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The palette output pointer is null.");
+            }
+
+            {
+                ScopedNoGraphicsOverride graphicsDataAccess;
+                OpenRCT2::Drawing::LoadPalette();
+                const auto& palette = OpenRCT2::Drawing::gPalette;
+                for (uint32_t index = 0; index < palette.size(); ++index)
+                {
+                    const auto& colour = palette[index];
+                    output[index] = { colour.red, colour.green, colour.blue, 255 };
+                }
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying the OpenRCT2 palette raised an unknown error.");
         }
     }
 
