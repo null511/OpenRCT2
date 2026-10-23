@@ -247,11 +247,12 @@ namespace
         const auto offsetX = (sequenceClearance.x - sequenceOrigin.x) / 32;
         const auto offsetY = (sequenceClearance.y - sequenceOrigin.y) / 32;
         const auto offsetZ = (sequenceClearance.z - sequenceOrigin.z) / 8;
-        const auto splineZBegin = descriptor.coordinates.zBegin / 8;
-        const auto splineZEnd = descriptor.coordinates.zEnd / 8;
+        const auto splineZBegin = (descriptor.coordinates.zBegin - sequenceOrigin.z) / 8;
+        const auto splineZEnd = (descriptor.coordinates.zEnd - sequenceOrigin.z) / 8;
         if ((sequenceClearance.x - sequenceOrigin.x) % 32 != 0 || (sequenceClearance.y - sequenceOrigin.y) % 32 != 0
             || (sequenceClearance.z - sequenceOrigin.z) % 8 != 0
-            || descriptor.coordinates.zBegin % 8 != 0 || descriptor.coordinates.zEnd % 8 != 0
+            || (descriptor.coordinates.zBegin - sequenceOrigin.z) % 8 != 0
+            || (descriptor.coordinates.zEnd - sequenceOrigin.z) % 8 != 0
             || offsetX < std::numeric_limits<int8_t>::min() || offsetX > std::numeric_limits<int8_t>::max()
             || offsetY < std::numeric_limits<int8_t>::min() || offsetY > std::numeric_limits<int8_t>::max()
             || offsetZ < std::numeric_limits<int8_t>::min() || offsetZ > std::numeric_limits<int8_t>::max()
