@@ -25,6 +25,7 @@
 #include "../openrct2/object/FootpathRailingsObject.h"
 #include "../openrct2/object/FootpathSurfaceObject.h"
 #include "../openrct2/object/PathAdditionEntry.h"
+#include "../openrct2/object/TerrainEdgeObject.h"
 #include "../openrct2/paint/tile_element/Paint.Path.h"
 #include "../openrct2/object/TerrainSurfaceObject.h"
 #include "../openrct2/ride/Vehicle.h"
@@ -51,7 +52,7 @@
 #include <string_view>
 #include <thread>
 
-static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
+static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 30);
@@ -97,6 +98,17 @@ namespace
     };
 
     uint32_t HashTerrainSurfaceIdentifier(std::string_view identifier)
+    {
+        uint32_t hash = 2166136261u;
+        for (const auto character : identifier)
+        {
+            hash ^= static_cast<uint8_t>(character);
+            hash *= 16777619u;
+        }
+        return hash;
+    }
+
+    uint32_t HashTerrainEdgeIdentifier(std::string_view identifier)
     {
         uint32_t hash = 2166136261u;
         for (const auto character : identifier)
@@ -725,11 +737,14 @@ extern "C"
                     const auto cornerHeights = OpenRCT2::GetSlopeRelativeCornerHeights(surface->getSlope());
                     const auto* surfaceObject = OpenRCT2::TerrainSurfaceObject::GetById(surface->getSurfaceObjectIndex());
                     const auto surfaceIdHash = surfaceObject == nullptr ? 0u : HashTerrainSurfaceIdentifier(surfaceObject->GetIdentifier());
+                    const auto* edgeObject = OpenRCT2::TerrainEdgeObject::GetById(surface->getEdgeObjectIndex());
+                    const auto edgeIdHash = edgeObject == nullptr ? 0u : HashTerrainEdgeIdentifier(edgeObject->GetIdentifier());
                     const auto waterHeight = surface->getWaterHeight();
                     const auto grassState = static_cast<uint8_t>(surface->getGrassLength() & 0x7);
 
                     output[index] = {
                         surfaceIdHash,
+                        edgeIdHash,
                         surface->baseHeight,
                         surface->getSlope(),
                         cornerHeights.bottom,
