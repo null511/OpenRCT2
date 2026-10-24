@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 18u
+#define RCT3D_OPENRCT2_ABI_VERSION 20u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -85,6 +85,7 @@ typedef struct Rct3DOpenRCT2TrackData
 	uint8_t base_height;
 	uint8_t main_palette_index;
 	uint8_t additional_palette_index;
+	uint8_t support_palette_index;
 	uint8_t sequence_count;
 	int8_t sequence_offset_x;
 	int8_t sequence_offset_y;
@@ -147,6 +148,8 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_track_data(
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_palette_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PaletteEntry* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_advance_simulation(Rct3DOpenRCT2Context* context);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_pause_state(Rct3DOpenRCT2Context* context, int32_t* is_paused);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_toggle_pause(Rct3DOpenRCT2Context* context, int32_t* is_paused);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_time_of_day_hours(
 	Rct3DOpenRCT2Context* context, float* hours);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_vehicle_count(

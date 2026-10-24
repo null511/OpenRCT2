@@ -9,6 +9,7 @@
 
 #include "../openrct2/Context.h"
 #include "../openrct2/Date.h"
+#include "../openrct2/Game.h"
 #include "../openrct2/entity/EntityList.h"
 #include "../openrct2/GameState.h"
 #include "../openrct2/OpenRCT2.h"
@@ -53,7 +54,7 @@
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 16);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 29);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 30);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
@@ -225,6 +226,7 @@ namespace
         const auto& colours = ride->trackColours[colourScheme];
         const auto mainPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.main, 6);
         const auto additionalPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.additional, 6);
+        const auto supportPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.supports, 6);
         const auto& descriptor = OpenRCT2::TrackMetadata::GetTrackElementDescriptor(track.getTrackType());
         const auto getRollSign = [](OpenRCT2::TrackMetadata::TrackRoll roll) -> int8_t {
             switch (roll)
@@ -270,6 +272,7 @@ namespace
             track.baseHeight,
             static_cast<uint8_t>(mainPaletteIndex),
             static_cast<uint8_t>(additionalPaletteIndex),
+            static_cast<uint8_t>(supportPaletteIndex),
             descriptor.sequenceData.numSequences,
             static_cast<int8_t>(offsetX),
             static_cast<int8_t>(offsetY),
@@ -309,10 +312,9 @@ namespace
                 {
                     const bool lastForTile = element->isLastForTile();
                     const auto* track = element->asTrack();
-                    if (track != nullptr
-                        && (track->getRideType() == OpenRCT2::RIDE_TYPE_MONORAIL
-                            || track->getRideType() == OpenRCT2::RIDE_TYPE_MINIATURE_RAILWAY
-                            || track->getRideType() == OpenRCT2::RIDE_TYPE_CLASSIC_MINI_ROLLER_COASTER)
+                    // Maze tiles use the track element's mazeEntry storage, which overlaps
+                    // the ride sequence field. That byte is maze data, not a sequence index.
+                    if (track != nullptr && track->getTrackType() != OpenRCT2::TrackElemType::maze
                         && !callback(MakeTrackData(*track, x, y)))
                     {
                         return false;
@@ -1023,7 +1025,7 @@ extern "C"
                 return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
             }
 
-            OpenRCT2::gameStateUpdateLogic();
+            OpenRCT2::gameStateTick();
             return RCT3D_OPENRCT2_OK;
         }
         catch (const std::exception& error)
@@ -1034,6 +1036,77 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Advancing the simulation raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_pause_state(Rct3DOpenRCT2Context* context, int32_t* is_paused)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+            if (is_paused == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The pause state output pointer is null.");
+            }
+
+            *is_paused = GameIsPaused() ? 1 : 0;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Reading the pause state raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_toggle_pause(Rct3DOpenRCT2Context* context, int32_t* is_paused)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+            if (is_paused == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The pause state output pointer is null.");
+            }
+
+            PauseToggle();
+            *is_paused = GameIsPaused() ? 1 : 0;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Toggling the pause state raised an unknown error.");
         }
     }
 
