@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 21u
+#define RCT3D_OPENRCT2_ABI_VERSION 22u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -101,6 +101,17 @@ typedef struct Rct3DOpenRCT2TrackData
 	int8_t roll_end;
 } Rct3DOpenRCT2TrackData;
 
+typedef struct Rct3DOpenRCT2RideEntranceData
+{
+	int32_t tile_x;
+	int32_t tile_y;
+	uint16_t ride_id;
+	uint8_t station_index;
+	uint8_t entrance_type;
+	uint8_t base_height;
+	uint8_t direction;
+} Rct3DOpenRCT2RideEntranceData;
+
 typedef struct Rct3DOpenRCT2PaletteEntry
 {
 	uint8_t red;
@@ -146,6 +157,10 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_track_count(
 	Rct3DOpenRCT2Context* context, uint64_t* count);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_track_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2TrackData* output, uint64_t capacity);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_ride_entrance_count(
+	Rct3DOpenRCT2Context* context, uint64_t* count);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_ride_entrance_data(
+	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2RideEntranceData* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_palette_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2PaletteEntry* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_advance_simulation(Rct3DOpenRCT2Context* context);

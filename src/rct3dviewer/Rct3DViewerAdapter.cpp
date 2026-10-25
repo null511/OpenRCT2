@@ -38,6 +38,7 @@
 #include "../openrct2/world/Map.h"
 #include "../openrct2/world/tile_element/Slope.h"
 #include "../openrct2/world/tile_element/PathElement.h"
+#include "../openrct2/world/tile_element/EntranceElement.h"
 #include "../openrct2/world/tile_element/SurfaceElement.h"
 #include "../openrct2/world/tile_element/TrackElement.h"
 #include "../openrct2/world/tile_element/TileElement.h"
@@ -56,6 +57,7 @@ static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 30);
+static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
@@ -330,6 +332,55 @@ namespace
                         && !callback(MakeTrackData(*track, x, y)))
                     {
                         return false;
+                    }
+                    if (lastForTile)
+                    {
+                        break;
+                    }
+                    ++element;
+                }
+            }
+        }
+        return true;
+    }
+
+    template<typename TCallback>
+    bool ForEachRideEntrance(TCallback&& callback)
+    {
+        const auto& mapSize = OpenRCT2::getGameState().mapSize;
+        for (int32_t y = 0; y < mapSize.y; ++y)
+        {
+            for (int32_t x = 0; x < mapSize.x; ++x)
+            {
+                const TileCoordsXY tilePosition(x, y);
+                auto* element = OpenRCT2::MapGetFirstElementAt(tilePosition);
+                if (element == nullptr)
+                {
+                    return false;
+                }
+
+                while (true)
+                {
+                    const bool lastForTile = element->isLastForTile();
+                    const auto* entrance = element->asEntrance();
+                    if (entrance != nullptr && !entrance->isGhost()
+                        && (entrance->getEntranceType() == OpenRCT2::EntranceType::rideEntrance
+                            || entrance->getEntranceType() == OpenRCT2::EntranceType::rideExit))
+                    {
+                        const auto entranceType = entrance->getEntranceType() == OpenRCT2::EntranceType::rideEntrance ? 0u : 1u;
+                        const Rct3DOpenRCT2RideEntranceData data{
+                            x,
+                            y,
+                            static_cast<uint16_t>(entrance->getRideIndex().ToUnderlying()),
+                            static_cast<uint8_t>(entrance->getStationIndex().ToUnderlying()),
+                            static_cast<uint8_t>(entranceType),
+                            entrance->baseHeight,
+                            static_cast<uint8_t>(entrance->getDirection()),
+                        };
+                        if (!callback(data))
+                        {
+                            return false;
+                        }
                     }
                     if (lastForTile)
                     {
@@ -971,6 +1022,104 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying track raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_ride_entrance_count(Rct3DOpenRCT2Context* context, uint64_t* count)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (count == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The ride entrance count output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            *count = 0;
+            if (!ForEachRideEntrance([&count](const Rct3DOpenRCT2RideEntranceData&) {
+                    ++*count;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting ride entrances.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting ride entrances raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_ride_entrance_data(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2RideEntranceData* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            uint64_t required = 0;
+            if (!ForEachRideEntrance([&required](const Rct3DOpenRCT2RideEntranceData&) {
+                    ++required;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting ride entrances.");
+            }
+            if (capacity < required)
+            {
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The ride entrance data buffer is smaller than the loaded entrance count.");
+            }
+            if (required > 0 && output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The ride entrance data output pointer is null.");
+            }
+
+            uint64_t index = 0;
+            if (!ForEachRideEntrance([&](const Rct3DOpenRCT2RideEntranceData& entrance) {
+                    output[index++] = entrance;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while copying ride entrances.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying ride entrance data raised an unknown error.");
         }
     }
 
