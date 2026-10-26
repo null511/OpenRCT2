@@ -10,8 +10,10 @@
 #include "../openrct2/Context.h"
 #include "../openrct2/Date.h"
 #include "../openrct2/Game.h"
+#include "../openrct2/entity/Guest.h"
 #include "../openrct2/entity/EntityList.h"
 #include "../openrct2/GameState.h"
+#include "../openrct2/management/Marketing.h"
 #include "../openrct2/OpenRCT2.h"
 #include "../openrct2/PlatformEnvironment.h"
 #include "../openrct2/drawing/ColourMap.h"
@@ -55,7 +57,8 @@
 
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
-static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 28);
+static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 36);
+static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 30);
 static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
@@ -70,6 +73,7 @@ struct Rct3DOpenRCT2Context
     bool processSettingsCaptured = false;
     bool paletteG1Loaded = false;
     bool paletteGxLoaded = false;
+    uint16_t peepEntityId = UINT16_MAX;
 };
 
 namespace
@@ -460,6 +464,7 @@ namespace
 
     Rct3DOpenRCT2VehicleData MakeVehicleData(const OpenRCT2::Vehicle& vehicle)
     {
+        const auto* trainHead = vehicle.GetHead();
         return {
             vehicle.id.ToUnderlying(),
             vehicle.x,
@@ -471,7 +476,20 @@ namespace
             0,
             GetVehiclePitchRadians(vehicle),
             GetVehicleRollRadians(vehicle),
+            vehicle.ride.ToUnderlying(),
+            trainHead == nullptr ? vehicle.id.ToUnderlying() : trainHead->id.ToUnderlying(),
+            vehicle.current_station.ToUnderlying(),
+            static_cast<uint8_t>(vehicle.status),
         };
+    }
+
+    OpenRCT2::Guest* GetPeep(Rct3DOpenRCT2Context* context, uint16_t entityId)
+    {
+        if (context->peepEntityId != entityId)
+        {
+            return nullptr;
+        }
+        return OpenRCT2::getGameState().entities.tryGetEntity<OpenRCT2::Guest>(EntityId::FromUnderlying(entityId));
     }
 
     template<typename TCallback>
@@ -694,6 +712,7 @@ extern "C"
             }
 
             context->parkLoaded = true;
+            context->peepEntityId = UINT16_MAX;
             return RCT3D_OPENRCT2_OK;
         }
         catch (const std::exception& error)
@@ -1389,6 +1408,320 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying positioned ride vehicle data raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_create_peep(
+        Rct3DOpenRCT2Context* context, int32_t x, int32_t y, int32_t z, uint16_t* entity_id)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+            if (entity_id == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The peep entity output pointer is null.");
+            }
+            if (context->peepEntityId != UINT16_MAX)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "A Peep Mode guest already exists.");
+            }
+
+            auto* peep = OpenRCT2::Guest::generate(CoordsXYZ{ x, y, z });
+            if (peep == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "OpenRCT2 could not create a guest for Peep Mode.");
+            }
+
+            peep->outsideOfPark = false;
+            peep->setState(OpenRCT2::PeepState::picked);
+            peep->subState = 0;
+            peep->moveTo(CoordsXYZ{ x, y, z });
+            context->peepEntityId = peep->id.ToUnderlying();
+            *entity_id = context->peepEntityId;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Creating a Peep Mode guest raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_move_peep(
+        Rct3DOpenRCT2Context* context, uint16_t entity_id, int32_t x, int32_t y, int32_t z, uint8_t direction)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            auto* peep = GetPeep(context, entity_id);
+            if (peep == nullptr || peep->state != OpenRCT2::PeepState::picked)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "The Peep Mode guest is not available for walking.");
+            }
+
+            const auto& mapSize = OpenRCT2::getGameState().mapSize;
+            if (x < 0 || y < 0 || x >= mapSize.x * kCoordsXYStep
+                || y >= mapSize.y * kCoordsXYStep)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The Peep Mode guest position is outside the map.");
+            }
+
+            peep->moveTo(CoordsXYZ{ x, y, z });
+            peep->orientation = static_cast<uint8_t>((direction & 0x3) << 3);
+            peep->peepDirection = direction & 0x3;
+            peep->updateSpriteBoundingBox();
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Moving the Peep Mode guest raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_enter_ride(
+        Rct3DOpenRCT2Context* context, uint16_t entity_id, uint16_t ride_id, uint8_t station_index)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            auto* peep = GetPeep(context, entity_id);
+            auto* ride = OpenRCT2::GetRide(RideId::FromUnderlying(ride_id));
+            if (peep == nullptr || peep->state != OpenRCT2::PeepState::picked || ride == nullptr
+                || ride->status != OpenRCT2::RideStatus::open || station_index >= ride->numStations)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "The guest or requested open ride station is unavailable.");
+            }
+
+            const auto stationId = StationIndex::FromUnderlying(station_index);
+            auto& station = ride->getStation(stationId);
+            if (station.entrance.isNull())
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "The requested ride station has no entrance.");
+            }
+
+            peep->currentRide = ride->id;
+            peep->currentRideStation = stationId;
+            peep->guestHeadingToRideId = ride->id;
+            peep->giveItem(ShopItem::voucher);
+            peep->voucherType = VOUCHER_TYPE_RIDE_FREE;
+            peep->voucherRideId = ride->id;
+            peep->daysInQueue = 0;
+            peep->timeInQueue = 0;
+            peep->rideSubState = OpenRCT2::PeepRideSubState::atQueueFront;
+            peep->setState(OpenRCT2::PeepState::queuing);
+            ride->queueInsertGuestAtFront(stationId, peep);
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Entering a ride queue raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_peep_data(
+        Rct3DOpenRCT2Context* context, uint16_t entity_id, Rct3DOpenRCT2PeepData* output)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The peep data output pointer is null.");
+            }
+            auto* peep = GetPeep(context, entity_id);
+            if (peep == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "The Peep Mode guest no longer exists.");
+            }
+
+            *output = {
+                peep->id.ToUnderlying(),
+                peep->x,
+                peep->y,
+                peep->z,
+                static_cast<uint8_t>(peep->state),
+                peep->currentRide.ToUnderlying(),
+                peep->currentRideStation.ToUnderlying(),
+                peep->currentTrain,
+                peep->currentCar,
+                peep->currentSeat,
+                [&peep]() {
+                const auto* ride = OpenRCT2::GetRide(peep->currentRide);
+                if (ride == nullptr || peep->currentTrain >= std::size(ride->vehicles))
+                {
+                    return EntityId::GetNull().ToUnderlying();
+                }
+                return ride->vehicles[peep->currentTrain].ToUnderlying();
+            }(),
+                0,
+            };
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Reading Peep Mode guest data raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_take_control_peep(
+        Rct3DOpenRCT2Context* context, uint16_t entity_id, int32_t x, int32_t y, int32_t z, uint8_t direction)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            auto* peep = GetPeep(context, entity_id);
+            if (peep == nullptr || peep->state != OpenRCT2::PeepState::walking)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "The guest has not completed the ride exit.");
+            }
+
+            peep->setState(OpenRCT2::PeepState::picked);
+            peep->subState = 0;
+            peep->guestHeadingToRideId = RideId::GetNull();
+            peep->resetPathfindGoal();
+            peep->moveTo(CoordsXYZ{ x, y, z });
+            peep->orientation = static_cast<uint8_t>((direction & 0x3) << 3);
+            peep->peepDirection = direction & 0x3;
+            peep->updateSpriteBoundingBox();
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Taking control of the Peep Mode guest raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_release_peep(Rct3DOpenRCT2Context* context, uint16_t entity_id)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            auto* peep = GetPeep(context, entity_id);
+            if (peep == nullptr)
+            {
+                context->peepEntityId = UINT16_MAX;
+                return RCT3D_OPENRCT2_OK;
+            }
+
+            if (peep->state == OpenRCT2::PeepState::picked)
+            {
+                peep->setState(OpenRCT2::PeepState::walking);
+                peep->action = OpenRCT2::PeepActionType::walking;
+                peep->subState = 0;
+                peep->resetPathfindGoal();
+            }
+            context->peepEntityId = UINT16_MAX;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Releasing the Peep Mode guest raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_remove_peep(Rct3DOpenRCT2Context* context, uint16_t entity_id)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            auto* peep = GetPeep(context, entity_id);
+            if (peep != nullptr)
+            {
+                peep->remove();
+            }
+            context->peepEntityId = UINT16_MAX;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Removing the Peep Mode guest raised an unknown error.");
         }
     }
 

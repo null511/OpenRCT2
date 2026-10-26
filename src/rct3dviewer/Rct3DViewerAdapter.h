@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 22u
+#define RCT3D_OPENRCT2_ABI_VERSION 24u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -73,7 +73,29 @@ typedef struct Rct3DOpenRCT2VehicleData
 	uint8_t reserved;
 	float pitch_radians;
 	float roll_radians;
+	uint16_t ride_id;
+	uint16_t train_head_entity_id;
+	uint8_t current_station;
+	uint8_t status;
 } Rct3DOpenRCT2VehicleData;
+
+#pragma pack(push, 1)
+typedef struct Rct3DOpenRCT2PeepData
+{
+	uint16_t entity_id;
+	int32_t x;
+	int32_t y;
+	int32_t z;
+	uint8_t state;
+	uint16_t ride_id;
+	uint8_t station_index;
+	uint8_t train_index;
+	uint8_t car_index;
+	uint8_t seat_index;
+	uint16_t train_head_entity_id;
+	uint8_t reserved;
+} Rct3DOpenRCT2PeepData;
+#pragma pack(pop)
 
 #pragma pack(push, 1)
 typedef struct Rct3DOpenRCT2TrackData
@@ -172,6 +194,20 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_vehicle_count(
 	Rct3DOpenRCT2Context* context, uint64_t* count);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_vehicle_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2VehicleData* output, uint64_t capacity);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_create_peep(
+	Rct3DOpenRCT2Context* context, int32_t x, int32_t y, int32_t z, uint16_t* entity_id);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_move_peep(
+	Rct3DOpenRCT2Context* context, uint16_t entity_id, int32_t x, int32_t y, int32_t z, uint8_t direction);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_take_control_peep(
+	Rct3DOpenRCT2Context* context, uint16_t entity_id, int32_t x, int32_t y, int32_t z, uint8_t direction);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_release_peep(
+	Rct3DOpenRCT2Context* context, uint16_t entity_id);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_enter_ride(
+	Rct3DOpenRCT2Context* context, uint16_t entity_id, uint16_t ride_id, uint8_t station_index);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_peep_data(
+	Rct3DOpenRCT2Context* context, uint16_t entity_id, Rct3DOpenRCT2PeepData* output);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_remove_peep(
+	Rct3DOpenRCT2Context* context, uint16_t entity_id);
 RCT3D_OPENRCT2_EXPORT const char* rct3d_openrct2_get_last_error(void);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_shutdown(Rct3DOpenRCT2Context* context);
 
