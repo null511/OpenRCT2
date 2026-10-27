@@ -57,7 +57,7 @@
 
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
-static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 36);
+static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 30);
 static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
@@ -480,6 +480,14 @@ namespace
             trainHead == nullptr ? vehicle.id.ToUnderlying() : trainHead->id.ToUnderlying(),
             vehicle.current_station.ToUnderlying(),
             static_cast<uint8_t>(vehicle.status),
+            vehicle.TrackLocation.x,
+            vehicle.TrackLocation.y,
+            vehicle.TrackLocation.z,
+            vehicle.track_progress,
+            vehicle.GetTrackProgress(),
+            vehicle.TrackTypeAndDirection,
+            static_cast<uint8_t>(vehicle.TrackSubposition),
+            0,
         };
     }
 

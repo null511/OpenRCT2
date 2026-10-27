@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 24u
+#define RCT3D_OPENRCT2_ABI_VERSION 25u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -77,6 +77,14 @@ typedef struct Rct3DOpenRCT2VehicleData
 	uint16_t train_head_entity_id;
 	uint8_t current_station;
 	uint8_t status;
+	int32_t track_location_x;
+	int32_t track_location_y;
+	int32_t track_location_z;
+	uint16_t track_progress;
+	uint16_t track_progress_total;
+	uint16_t track_type_and_direction;
+	uint8_t track_subposition;
+	uint8_t track_reserved;
 } Rct3DOpenRCT2VehicleData;
 
 #pragma pack(push, 1)
