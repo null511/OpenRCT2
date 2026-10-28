@@ -59,7 +59,7 @@ static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 30);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 31);
 static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
@@ -303,6 +303,7 @@ namespace
             static_cast<uint16_t>(track.getRideType()),
             getRollSign(descriptor.definition.rollStart),
             getRollSign(descriptor.definition.rollEnd),
+            static_cast<uint8_t>(track.hasChain()),
         };
     }
 
