@@ -56,10 +56,10 @@
 #include <thread>
 
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
-static_assert(sizeof(Rct3DOpenRCT2PathData) == 28);
+static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 31);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 32);
 static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
@@ -181,6 +181,7 @@ namespace
             surfaceObject == nullptr ? 0u : HashPathObjectIdentifier(surfaceObject->GetIdentifier()),
             railingsObject == nullptr ? 0u : HashPathObjectIdentifier(railingsObject->GetIdentifier()),
             path.baseHeight,
+            path.clearanceHeight,
             static_cast<uint8_t>(path.getSlopeDirection()),
             path.getEdges(),
             path.getCorners(),
@@ -295,6 +296,7 @@ namespace
             static_cast<int8_t>(offsetX),
             static_cast<int8_t>(offsetY),
             static_cast<int8_t>(offsetZ),
+            track.clearanceHeight,
             descriptor.coordinates.rotationBegin,
             descriptor.coordinates.rotationEnd,
             static_cast<int8_t>(splineZBegin),

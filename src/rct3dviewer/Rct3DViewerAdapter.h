@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 26u
+#define RCT3D_OPENRCT2_ABI_VERSION 29u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -50,6 +50,7 @@ typedef struct Rct3DOpenRCT2PathData
 	uint32_t surface_id_hash;
 	uint32_t railings_id_hash;
 	uint8_t base_z;
+	uint8_t clearance_height;
 	uint8_t slope_direction;
 	uint8_t edges;
 	uint8_t corners;
@@ -121,6 +122,7 @@ typedef struct Rct3DOpenRCT2TrackData
 	int8_t sequence_offset_x;
 	int8_t sequence_offset_y;
 	int8_t sequence_offset_z;
+	uint8_t clearance_height;
 	int8_t rotation_begin;
 	int8_t rotation_end;
 	int8_t spline_z_begin;
