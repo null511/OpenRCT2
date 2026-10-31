@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 30u
+#define RCT3D_OPENRCT2_ABI_VERSION 31u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -70,6 +70,7 @@ typedef struct Rct3DOpenRCT2TreeData
 	int32_t z;
 	uint8_t direction;
 	uint8_t reserved[3];
+	uint32_t object_id_hash;
 } Rct3DOpenRCT2TreeData;
 #pragma pack(pop)
 

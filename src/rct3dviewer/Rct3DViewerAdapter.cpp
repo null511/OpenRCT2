@@ -13,6 +13,7 @@
 #include "../openrct2/entity/Guest.h"
 #include "../openrct2/entity/EntityList.h"
 #include "../openrct2/GameState.h"
+#include "../openrct2/interface/Cursors.h"
 #include "../openrct2/management/Marketing.h"
 #include "../openrct2/OpenRCT2.h"
 #include "../openrct2/PlatformEnvironment.h"
@@ -60,7 +61,7 @@
 
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
-static_assert(sizeof(Rct3DOpenRCT2TreeData) == 16);
+static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 32);
@@ -236,6 +237,10 @@ namespace
         const OpenRCT2::SmallSceneryElement& scenery, const OpenRCT2::SmallSceneryEntry& entry,
         int32_t tileX, int32_t tileY)
     {
+        const auto* object = OpenRCT2::GetContext()->GetObjectManager().GetLoadedObject(
+            OpenRCT2::ObjectType::smallScenery, scenery.getEntryIndex());
+        const auto objectIdHash = object == nullptr ? 0u : HashTerrainSurfaceIdentifier(object->GetIdentifier());
+
         int32_t offsetX = 15;
         int32_t offsetY = 15;
         if (entry.flags.has(OpenRCT2::SmallSceneryFlag::occupiesFullTile))
@@ -267,7 +272,15 @@ namespace
             scenery.getBaseZ(),
             static_cast<uint8_t>(scenery.getDirection()),
             { 0, 0, 0 },
+            objectIdHash,
         };
+    }
+
+    bool IsTreeOrShrub(const OpenRCT2::SmallSceneryEntry& entry)
+    {
+        return entry.flags.has(OpenRCT2::SmallSceneryFlag::isTree)
+            || entry.tool_id == CursorID::treeDown
+            || entry.tool_id == CursorID::flowerDown;
     }
 
     template<typename TCallback>
@@ -292,7 +305,7 @@ namespace
                     if (scenery != nullptr && !scenery->isGhost() && !scenery->isInvisible())
                     {
                         const auto* entry = scenery->getEntry();
-                        if (entry != nullptr && entry->flags.has(OpenRCT2::SmallSceneryFlag::isTree)
+                        if (entry != nullptr && IsTreeOrShrub(*entry)
                             && !callback(MakeTreeData(*scenery, *entry, x, y)))
                         {
                             return false;
