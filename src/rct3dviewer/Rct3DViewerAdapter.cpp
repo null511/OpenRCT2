@@ -35,6 +35,7 @@
 #include "../openrct2/ride/Vehicle.h"
 #include "../openrct2/ride/VehicleGeometry.h"
 #include "../openrct2/ride/Ride.h"
+#include "../openrct2/ride/RideData.h"
 #include "../openrct2/ride/TrackData.h"
 #include "../openrct2/ride/ted/TrackElementDescriptor.h"
 #include "../openrct2/ride/RideColour.h"
@@ -64,7 +65,7 @@ static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 32);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 33);
 static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
@@ -341,6 +342,16 @@ namespace
         const auto additionalPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.additional, 6);
         const auto supportPaletteIndex = OpenRCT2::Drawing::getColourMapShade(colours.supports, 6);
         const auto& descriptor = OpenRCT2::TrackMetadata::GetTrackElementDescriptor(track.getTrackType());
+        const auto& rideDescriptor = OpenRCT2::GetRideTypeDescriptor(track.getRideType());
+        const auto isFlatRidePlatformBase = rideDescriptor.flags.has(OpenRCT2::RtdFlag::isFlatRide)
+            && !rideDescriptor.flags.has(OpenRCT2::RtdFlag::isShopOrFacility)
+            && rideDescriptor.flags.has(OpenRCT2::RtdFlag::hasSinglePieceStation)
+            && track.getTrackType() == rideDescriptor.StartTrackPiece
+            && descriptor.definition.group == OpenRCT2::TrackGroup::flatRideBase;
+        const auto isTowerRidePlatformBase = rideDescriptor.flags.has(OpenRCT2::RtdFlag::hasSinglePieceStation)
+            && track.getTrackType() == rideDescriptor.StartTrackPiece
+            && descriptor.definition.group == OpenRCT2::TrackGroup::tower;
+        const auto isRidePlatformBase = isFlatRidePlatformBase || isTowerRidePlatformBase;
         const auto getRollSign = [](OpenRCT2::TrackMetadata::TrackRoll roll) -> int8_t {
             switch (roll)
             {
@@ -400,6 +411,7 @@ namespace
             getRollSign(descriptor.definition.rollStart),
             getRollSign(descriptor.definition.rollEnd),
             static_cast<uint8_t>(track.hasChain()),
+            static_cast<uint8_t>(isRidePlatformBase),
         };
     }
 
