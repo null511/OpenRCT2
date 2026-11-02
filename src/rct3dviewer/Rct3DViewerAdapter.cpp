@@ -65,7 +65,7 @@ static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 33);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 35);
 static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
@@ -368,6 +368,29 @@ namespace
         {
             throw std::runtime_error("A track element has an invalid sequence index.");
         }
+        const auto& sequenceDescriptor = descriptor.sequenceData.sequences[sequence];
+        uint8_t tunnelSideMask = 0;
+        uint8_t connectionSideMask = 0;
+        for (const auto& tunnel : sequenceDescriptor.tunnels)
+        {
+            if (tunnel.direction == track.getDirection())
+            {
+                tunnelSideMask |= 1u;
+            }
+            else if (tunnel.direction == DirectionNext(track.getDirection()))
+            {
+                tunnelSideMask |= 2u;
+            }
+        }
+        const auto relativeConnectionSides = sequenceDescriptor.getEntranceConnectionSides();
+        for (uint8_t side = 0; side < 4; ++side)
+        {
+            if ((relativeConnectionSides & (1u << side)) != 0)
+            {
+                const auto worldSide = (side + DirectionReverse(track.getDirection())) & 3;
+                connectionSideMask |= static_cast<uint8_t>(1u << worldSide);
+            }
+        }
         const auto& sequenceOrigin = descriptor.sequenceData.sequences[0].clearance;
         const auto& sequenceClearance = descriptor.sequenceData.sequences[sequence].clearance;
         const auto offsetX = (sequenceClearance.x - sequenceOrigin.x) / 32;
@@ -412,6 +435,8 @@ namespace
             getRollSign(descriptor.definition.rollEnd),
             static_cast<uint8_t>(track.hasChain()),
             static_cast<uint8_t>(isRidePlatformBase),
+            tunnelSideMask,
+            connectionSideMask,
         };
     }
 
