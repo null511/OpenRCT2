@@ -65,8 +65,8 @@ static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
-static_assert(sizeof(Rct3DOpenRCT2TrackData) == 35);
-static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 14);
+static_assert(sizeof(Rct3DOpenRCT2TrackData) == 36);
+static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 15);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
@@ -437,6 +437,7 @@ namespace
             static_cast<uint8_t>(isRidePlatformBase),
             tunnelSideMask,
             connectionSideMask,
+            static_cast<uint8_t>(rideDescriptor.flags.has(OpenRCT2::RtdFlag::isShopOrFacility)),
         };
     }
 
@@ -466,7 +467,7 @@ namespace
                     const auto* track = element->asTrack();
                     // Maze tiles use the track element's mazeEntry storage, which overlaps
                     // the ride sequence field. That byte is maze data, not a sequence index.
-                    if (track != nullptr && track->getTrackType() != OpenRCT2::TrackElemType::maze
+                    if (track != nullptr && !track->isGhost() && track->getTrackType() != OpenRCT2::TrackElemType::maze
                         && !callback(MakeTrackData(*track, x, y)))
                     {
                         return false;
@@ -514,6 +515,7 @@ namespace
                             static_cast<uint8_t>(entranceType),
                             entrance->baseHeight,
                             static_cast<uint8_t>(entrance->getDirection()),
+                            entrance->clearanceHeight,
                         };
                         if (!callback(data))
                         {
