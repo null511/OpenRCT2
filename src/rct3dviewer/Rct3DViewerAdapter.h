@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 35u
+#define RCT3D_OPENRCT2_ABI_VERSION 36u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -60,6 +60,16 @@ typedef struct Rct3DOpenRCT2PathData
 	uint32_t addition_id_hash;
 	uint8_t addition_flags;
 } Rct3DOpenRCT2PathData;
+#pragma pack(pop)
+
+#pragma pack(push, 1)
+typedef struct Rct3DOpenRCT2ObstacleData
+{
+	int32_t tile_x;
+	int32_t tile_y;
+	uint8_t base_height;
+	uint8_t clearance_height;
+} Rct3DOpenRCT2ObstacleData;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
@@ -207,6 +217,10 @@ RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_tree_count(
 	Rct3DOpenRCT2Context* context, uint64_t* count);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_tree_data(
 	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2TreeData* output, uint64_t capacity);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_obstacle_count(
+	Rct3DOpenRCT2Context* context, uint64_t* count);
+RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_obstacle_data(
+	Rct3DOpenRCT2Context* context, Rct3DOpenRCT2ObstacleData* output, uint64_t capacity);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_get_track_count(
 	Rct3DOpenRCT2Context* context, uint64_t* count);
 RCT3D_OPENRCT2_EXPORT int32_t rct3d_openrct2_copy_track_data(

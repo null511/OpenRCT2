@@ -49,6 +49,7 @@
 #include "../openrct2/world/tile_element/SmallSceneryElement.h"
 #include "../openrct2/world/tile_element/TrackElement.h"
 #include "../openrct2/world/tile_element/TileElement.h"
+#include "../openrct2/world/tile_element/TileElementType.h"
 
 #include <filesystem>
 #include <algorithm>
@@ -63,6 +64,7 @@
 static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
+static_assert(sizeof(Rct3DOpenRCT2ObstacleData) == 10);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 36);
@@ -318,6 +320,47 @@ namespace
                     }
                     ++element;
                 }
+            }
+        }
+        return true;
+    }
+
+    template<typename TCallback>
+    bool ForEachObstacle(TCallback&& callback)
+    {
+        const auto& mapSize = OpenRCT2::getGameState().mapSize;
+        for (int32_t y = 0; y < mapSize.y; ++y)
+        {
+            for (int32_t x = 0; x < mapSize.x; ++x)
+            {
+                auto* element = OpenRCT2::MapGetFirstElementAt(TileCoordsXY(x, y));
+                if (element == nullptr)
+                {
+                    return false;
+                }
+
+                do
+                {
+                    if (element->isGhost() || element->isInvisible())
+                    {
+                        continue;
+                    }
+                    switch (element->getType())
+                    {
+                        case OpenRCT2::TileElementType::smallScenery:
+                        case OpenRCT2::TileElementType::largeScenery:
+                        case OpenRCT2::TileElementType::wall:
+                        case OpenRCT2::TileElementType::entrance:
+                        case OpenRCT2::TileElementType::banner:
+                            if (!callback(Rct3DOpenRCT2ObstacleData{ x, y, element->baseHeight, element->clearanceHeight }))
+                            {
+                                return false;
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                } while (!(element++)->isLastForTile());
             }
         }
         return true;
@@ -1185,6 +1228,102 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying map tree data raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_obstacle_count(Rct3DOpenRCT2Context* context, uint64_t* count)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (count == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The obstacle count output pointer is null.");
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            *count = 0;
+            if (!ForEachObstacle([&count](const Rct3DOpenRCT2ObstacleData&) {
+                    ++*count;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting obstacles.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting map obstacles raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_obstacle_data(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2ObstacleData* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+            {
+                return state;
+            }
+            if (!context->parkLoaded)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            }
+
+            uint64_t required = 0;
+            if (!ForEachObstacle([&required](const Rct3DOpenRCT2ObstacleData&) {
+                    ++required;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while counting obstacles.");
+            }
+            if (capacity < required)
+            {
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The obstacle data buffer is smaller than the loaded obstacle count.");
+            }
+            if (required > 0 && output == nullptr)
+            {
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The obstacle data output pointer is null.");
+            }
+
+            uint64_t index = 0;
+            if (!ForEachObstacle([&](const Rct3DOpenRCT2ObstacleData& obstacle) {
+                    output[index++] = obstacle;
+                    return true;
+                }))
+            {
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "A map tile has no tile elements while copying obstacles.");
+            }
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            gLastError = error.what();
+            return static_cast<int32_t>(RCT3D_OPENRCT2_INTERNAL_ERROR);
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying map obstacle data raised an unknown error.");
         }
     }
 
