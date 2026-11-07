@@ -34,6 +34,7 @@
 #include "../openrct2/object/TerrainSurfaceObject.h"
 #include "../openrct2/ride/Vehicle.h"
 #include "../openrct2/ride/VehicleGeometry.h"
+#include "../openrct2/ride/VehicleSubpositionData.h"
 #include "../openrct2/ride/Ride.h"
 #include "../openrct2/ride/RideData.h"
 #include "../openrct2/ride/TrackData.h"
@@ -57,6 +58,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -66,7 +68,8 @@ static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2ObstacleData) == 10);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
-static_assert(sizeof(Rct3DOpenRCT2PeepData) == 24);
+static_assert(sizeof(Rct3DOpenRCT2VehiclePathSample) == 28);
+static_assert(sizeof(Rct3DOpenRCT2PeepData) == 26);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 36);
 static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 15);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
@@ -600,26 +603,26 @@ namespace
         }
     }
 
-    float GetVehiclePitchRadians(const OpenRCT2::Vehicle& vehicle)
+    float GetVehiclePitchRadians(VehiclePitch pitch)
     {
-        if (!VehicleHasTrackPitchAndRoll(vehicle) || vehicle.pitch >= VehiclePitch::pitchCount)
+        if (pitch >= VehiclePitch::pitchCount)
         {
             return 0.0f;
         }
 
-        const auto pitchVector = OpenRCT2::RideVehicle::Geometry::getPitchVector32(vehicle.pitch);
+        const auto pitchVector = OpenRCT2::RideVehicle::Geometry::getPitchVector32(pitch);
         return static_cast<float>(std::atan2(static_cast<double>(pitchVector.y), static_cast<double>(pitchVector.x)));
     }
 
-    float GetVehicleRollRadians(const OpenRCT2::Vehicle& vehicle)
+    float GetVehicleRollRadians(VehicleRoll roll)
     {
-        if (!VehicleHasTrackPitchAndRoll(vehicle) || vehicle.roll >= VehicleRoll::rollCount)
+        if (roll >= VehicleRoll::rollCount)
         {
             return 0.0f;
         }
 
         double sign = 1.0;
-        switch (vehicle.roll)
+        switch (roll)
         {
             case VehicleRoll::right22:
             case VehicleRoll::right45:
@@ -636,7 +639,7 @@ namespace
                 break;
         }
 
-        const auto horizontalComponent = OpenRCT2::RideVehicle::Geometry::getRollHorizontalComponent(vehicle.roll);
+        const auto horizontalComponent = OpenRCT2::RideVehicle::Geometry::getRollHorizontalComponent(roll);
         const auto cosine = static_cast<double>(horizontalComponent) / std::numeric_limits<int32_t>::max();
         return static_cast<float>(sign * std::acos(std::clamp(cosine, -1.0, 1.0)));
     }
@@ -653,8 +656,8 @@ namespace
             static_cast<uint8_t>(vehicle.pitch),
             static_cast<uint8_t>(vehicle.roll),
             0,
-            GetVehiclePitchRadians(vehicle),
-            GetVehicleRollRadians(vehicle),
+            VehicleHasTrackPitchAndRoll(vehicle) ? GetVehiclePitchRadians(vehicle.pitch) : 0.0f,
+            VehicleHasTrackPitchAndRoll(vehicle) ? GetVehicleRollRadians(vehicle.roll) : 0.0f,
             vehicle.ride.ToUnderlying(),
             trainHead == nullptr ? vehicle.id.ToUnderlying() : trainHead->id.ToUnderlying(),
             vehicle.current_station.ToUnderlying(),
@@ -668,6 +671,55 @@ namespace
             static_cast<uint8_t>(vehicle.TrackSubposition),
             0,
         };
+    }
+
+    template<typename TCallback>
+    bool ForEachVehiclePathSample(TCallback&& callback)
+    {
+        std::set<std::pair<uint16_t, uint8_t>> rideSubpositions;
+        for (const auto* vehicle : OpenRCT2::EntityList<OpenRCT2::Vehicle>())
+        {
+            const auto* ride = OpenRCT2::GetRide(vehicle->ride);
+            if (ride != nullptr && !OpenRCT2::GetRideTypeDescriptor(ride->type).flags.has(OpenRCT2::RtdFlag::isFlatRide))
+            {
+                rideSubpositions.emplace(vehicle->ride.ToUnderlying(), static_cast<uint8_t>(vehicle->TrackSubposition));
+            }
+        }
+
+        uint32_t pathId = 0;
+        return ForEachTrack([&](const Rct3DOpenRCT2TrackData& track) {
+            if (track.sequence != 0)
+                return true;
+            const auto* ride = OpenRCT2::GetRide(RideId::FromUnderlying(track.ride_id));
+            if (ride == nullptr)
+                return true;
+            for (const auto& [rideId, subposition] : rideSubpositions)
+            {
+                if (rideId != track.ride_id)
+                    continue;
+                const auto type = static_cast<OpenRCT2::TrackElemType>(track.track_type);
+                const auto count = OpenRCT2::VehicleGetMoveInfoSize(
+                    static_cast<VehicleTrackSubposition>(subposition), type, track.direction);
+                if (count < 2)
+                    continue;
+                const auto* samples = gTrackVehicleInfo[subposition][(track.track_type << 2) | track.direction];
+                const auto offsetZ = OpenRCT2::GetRideTypeDescriptor(ride->type).Heights.VehicleZOffset;
+                ++pathId;
+                for (uint16_t i = 0; i < count; ++i)
+                {
+                    const auto& sample = samples->info[i];
+                    const Rct3DOpenRCT2VehiclePathSample output = {
+                        pathId, track.tile_x * 32 + sample.x, track.tile_y * 32 + sample.y,
+                        track.base_height * 8 + sample.z + offsetZ,
+                        GetVehiclePitchRadians(sample.pitch), GetVehicleRollRadians(sample.roll),
+                        rideId, sample.yaw, subposition,
+                    };
+                    if (!callback(output))
+                        return false;
+                }
+            }
+            return true;
+        });
     }
 
     OpenRCT2::Guest* GetPeep(Rct3DOpenRCT2Context* context, uint16_t entityId)
@@ -1792,6 +1844,68 @@ extern "C"
         }
     }
 
+    int32_t rct3d_openrct2_get_vehicle_path_sample_count(Rct3DOpenRCT2Context* context, uint64_t* count)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+                return state;
+            if (!context->parkLoaded)
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            if (count == nullptr)
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The sample count output pointer is null.");
+            *count = 0;
+            if (!ForEachVehiclePathSample([&](const auto&) { ++*count; return true; }))
+                return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Unable to enumerate vehicle paths.");
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, error.what());
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Counting vehicle path samples raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_copy_vehicle_path_samples(
+        Rct3DOpenRCT2Context* context, Rct3DOpenRCT2VehiclePathSample* output, uint64_t capacity)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+                return state;
+            if (!context->parkLoaded)
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            if (capacity > 0 && output == nullptr)
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "The sample output pointer is null.");
+            uint64_t index = 0;
+            if (!ForEachVehiclePathSample([&](const auto& sample) {
+                if (index >= capacity)
+                    return false;
+                output[index++] = sample;
+                return true;
+            }))
+                return SetError(RCT3D_OPENRCT2_BUFFER_TOO_SMALL, "The vehicle path sample buffer is too small.");
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, error.what());
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying vehicle path samples raised an unknown error.");
+        }
+    }
+
     int32_t rct3d_openrct2_create_peep(
         Rct3DOpenRCT2Context* context, int32_t x, int32_t y, int32_t z, uint16_t* entity_id)
     {
@@ -1961,6 +2075,22 @@ extern "C"
                 return SetError(RCT3D_OPENRCT2_INVALID_STATE, "The Peep Mode guest no longer exists.");
             }
 
+            auto trainHeadId = EntityId::GetNull();
+            const OpenRCT2::Vehicle* vehicle = nullptr;
+            const auto* ride = OpenRCT2::GetRide(peep->currentRide);
+            if (ride != nullptr && peep->currentTrain < std::size(ride->vehicles))
+            {
+                trainHeadId = ride->vehicles[peep->currentTrain];
+                if (peep->state == OpenRCT2::PeepState::onRide)
+                {
+                    const auto* train = OpenRCT2::TryGetVehicle(trainHeadId);
+                    if (train != nullptr)
+                    {
+                        vehicle = train->GetCar(peep->currentCar);
+                    }
+                }
+            }
+
             *output = {
                 peep->id.ToUnderlying(),
                 peep->x,
@@ -1972,14 +2102,8 @@ extern "C"
                 peep->currentTrain,
                 peep->currentCar,
                 peep->currentSeat,
-                [&peep]() {
-                const auto* ride = OpenRCT2::GetRide(peep->currentRide);
-                if (ride == nullptr || peep->currentTrain >= std::size(ride->vehicles))
-                {
-                    return EntityId::GetNull().ToUnderlying();
-                }
-                return ride->vehicles[peep->currentTrain].ToUnderlying();
-            }(),
+                trainHeadId.ToUnderlying(),
+                vehicle == nullptr ? EntityId::GetNull().ToUnderlying() : vehicle->id.ToUnderlying(),
                 0,
             };
             return RCT3D_OPENRCT2_OK;
