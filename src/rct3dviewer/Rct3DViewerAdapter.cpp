@@ -67,7 +67,7 @@ static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2ObstacleData) == 10);
-static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 56);
+static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 60);
 static_assert(sizeof(Rct3DOpenRCT2VehiclePathSample) == 28);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 26);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 36);
@@ -647,6 +647,9 @@ namespace
     Rct3DOpenRCT2VehicleData MakeVehicleData(const OpenRCT2::Vehicle& vehicle)
     {
         const auto* trainHead = vehicle.GetHead();
+        const auto* carEntry = vehicle.Entry();
+        const auto swingPosition = static_cast<int16_t>(
+            carEntry != nullptr && carEntry->flags.has(CarEntryFlag::useSlideSwing) ? vehicle.SwingPosition : 0);
         return {
             vehicle.id.ToUnderlying(),
             vehicle.x,
@@ -670,6 +673,7 @@ namespace
             vehicle.TrackTypeAndDirection,
             static_cast<uint8_t>(vehicle.TrackSubposition),
             0,
+            swingPosition,
         };
     }
 
