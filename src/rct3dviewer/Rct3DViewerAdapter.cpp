@@ -649,7 +649,7 @@ namespace
         const auto* trainHead = vehicle.GetHead();
         const auto* carEntry = vehicle.Entry();
         const auto swingPosition = static_cast<int16_t>(
-            carEntry != nullptr && carEntry->flags.has(CarEntryFlag::useSlideSwing) ? vehicle.SwingPosition : 0);
+            carEntry != nullptr && carEntry->flags.has(CarEntryFlag::hasSwinging) ? vehicle.SwingPosition : 0);
         return {
             vehicle.id.ToUnderlying(),
             vehicle.x,
@@ -658,7 +658,7 @@ namespace
             vehicle.orientation,
             static_cast<uint8_t>(vehicle.pitch),
             static_cast<uint8_t>(vehicle.roll),
-            0,
+            static_cast<uint8_t>(OpenRCT2::Drawing::getColourMapShade(vehicle.colours.Body, 6)),
             VehicleHasTrackPitchAndRoll(vehicle) ? GetVehiclePitchRadians(vehicle.pitch) : 0.0f,
             VehicleHasTrackPitchAndRoll(vehicle) ? GetVehicleRollRadians(vehicle.roll) : 0.0f,
             vehicle.ride.ToUnderlying(),
