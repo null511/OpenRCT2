@@ -55,6 +55,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -67,7 +68,9 @@ static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2ObstacleData) == 10);
-static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 60);
+static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 68);
+static_assert(offsetof(Rct3DOpenRCT2VehicleData, object_id_hash) == 60);
+static_assert(offsetof(Rct3DOpenRCT2VehicleData, rotation_frame_mask) == 66);
 static_assert(sizeof(Rct3DOpenRCT2VehiclePathSample) == 28);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 26);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 36);
@@ -136,7 +139,7 @@ namespace
         return hash;
     }
 
-    uint32_t HashPathObjectIdentifier(std::string_view identifier)
+    uint32_t HashObjectIdentifier(std::string_view identifier)
     {
         uint32_t hash = 2166136261u;
         for (const auto character : identifier)
@@ -189,8 +192,8 @@ namespace
         return {
             tileX,
             tileY,
-            surfaceObject == nullptr ? 0u : HashPathObjectIdentifier(surfaceObject->GetIdentifier()),
-            railingsObject == nullptr ? 0u : HashPathObjectIdentifier(railingsObject->GetIdentifier()),
+            surfaceObject == nullptr ? 0u : HashObjectIdentifier(surfaceObject->GetIdentifier()),
+            railingsObject == nullptr ? 0u : HashObjectIdentifier(railingsObject->GetIdentifier()),
             path.baseHeight,
             path.clearanceHeight,
             static_cast<uint8_t>(path.getSlopeDirection()),
@@ -200,7 +203,7 @@ namespace
             railingsDescriptor == nullptr ? static_cast<uint8_t>(OpenRCT2::RailingEntrySupportType::box)
                                            : static_cast<uint8_t>(railingsDescriptor->supportType),
             static_cast<uint8_t>(OpenRCT2::GetPathSupportOrientation(path.getEdges())),
-            additionObject == nullptr ? 0u : HashPathObjectIdentifier(additionObject->GetIdentifier()),
+            additionObject == nullptr ? 0u : HashObjectIdentifier(additionObject->GetIdentifier()),
             additionFlags,
         };
     }
@@ -647,9 +650,20 @@ namespace
     Rct3DOpenRCT2VehicleData MakeVehicleData(const OpenRCT2::Vehicle& vehicle)
     {
         const auto* trainHead = vehicle.GetHead();
-        const auto* carEntry = vehicle.Entry();
+        const auto* rideEntry = vehicle.GetRideEntry();
+        const auto* carEntry = rideEntry == nullptr ? nullptr : rideEntry->GetCar(vehicle.vehicle_type);
         const auto swingPosition = static_cast<int16_t>(
             carEntry != nullptr && carEntry->flags.has(CarEntryFlag::hasSwinging) ? vehicle.SwingPosition : 0);
+
+        // Match PaintVehicle's car-entry selection without changing the movement orientation.
+        const auto vehicleType = static_cast<uint8_t>(
+            vehicle.vehicle_type + (vehicle.flags.has(OpenRCT2::VehicleFlag::carIsInverted) ? 1 : 0));
+        const auto* visualCarEntry = rideEntry == nullptr ? nullptr : rideEntry->GetCar(vehicleType);
+        const auto* object = rideEntry == nullptr ? nullptr
+            : OpenRCT2::GetContext()->GetObjectManager().GetLoadedObject(OpenRCT2::ObjectType::ride, vehicle.ride_subtype);
+        const auto objectHash = object == nullptr ? 0u
+            : object->GetIdentifier().empty() ? HashObjectIdentifier(object->GetDescriptor().ToString())
+                                             : HashObjectIdentifier(object->GetIdentifier());
         return {
             vehicle.id.ToUnderlying(),
             vehicle.x,
@@ -674,6 +688,10 @@ namespace
             static_cast<uint8_t>(vehicle.TrackSubposition),
             0,
             swingPosition,
+            objectHash,
+            vehicleType,
+            visualCarEntry == nullptr ? uint8_t{ 255 } : static_cast<uint8_t>(visualCarEntry->paintStyle),
+            visualCarEntry == nullptr ? uint16_t{ 0 } : visualCarEntry->tabRotationMask,
         };
     }
 
