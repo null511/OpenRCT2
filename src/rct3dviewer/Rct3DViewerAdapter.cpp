@@ -38,6 +38,7 @@
 #include "../openrct2/ride/Ride.h"
 #include "../openrct2/ride/RideData.h"
 #include "../openrct2/ride/TrackData.h"
+#include "../openrct2/ride/TrackIteration.h"
 #include "../openrct2/ride/ted/TrackElementDescriptor.h"
 #include "../openrct2/ride/RideColour.h"
 #include "../openrct2/world/Footpath.h"
@@ -742,6 +743,124 @@ namespace
             }
             return true;
         });
+    }
+
+    bool GetVehicleLookAheadSamples(
+        const OpenRCT2::Vehicle& vehicle, float distance,
+        Rct3DOpenRCT2VehiclePathSample& start, Rct3DOpenRCT2VehiclePathSample& end, float& amount)
+    {
+        const auto* ride = OpenRCT2::GetRide(vehicle.ride);
+        if (ride == nullptr || OpenRCT2::GetRideTypeDescriptor(ride->type).flags.has(OpenRCT2::RtdFlag::isFlatRide))
+            return false;
+
+        auto location = vehicle.TrackLocation;
+        auto type = vehicle.GetTrackType();
+        auto direction = vehicle.GetTrackDirection();
+        auto subposition = vehicle.TrackSubposition;
+        auto progress = static_cast<int32_t>(vehicle.track_progress);
+        const bool backwards = vehicle.velocity < 0;
+        const auto offsetZ = OpenRCT2::GetRideTypeDescriptor(ride->type).Heights.VehicleZOffset;
+        auto readSample = [&]() {
+            const auto& sample = gTrackVehicleInfo[static_cast<uint8_t>(subposition)]
+                [(static_cast<uint16_t>(type) << 2) | direction]->info[progress];
+            return Rct3DOpenRCT2VehiclePathSample{
+                0, location.x + sample.x, location.y + sample.y, location.z + sample.z + offsetZ,
+                GetVehiclePitchRadians(sample.pitch), GetVehicleRollRadians(sample.roll),
+                vehicle.ride.ToUnderlying(), sample.yaw, static_cast<uint8_t>(subposition),
+            };
+        };
+        auto count = OpenRCT2::VehicleGetMoveInfoSize(subposition, type, direction);
+        if (count < 2 || progress >= count)
+            return false;
+        start = { 0, vehicle.x, vehicle.y, vehicle.z,
+            GetVehiclePitchRadians(vehicle.pitch), GetVehicleRollRadians(vehicle.roll),
+            vehicle.ride.ToUnderlying(), vehicle.orientation, static_cast<uint8_t>(subposition) };
+
+        // Only inspect a short, bounded stretch of the native movement path; never move the actual vehicle.
+        for (int32_t step = 0; step < 4096; ++step)
+        {
+            progress += backwards ? -1 : 1;
+            if (progress < 0 || progress >= count)
+            {
+                auto* element = OpenRCT2::MapGetTrackElementAtOfTypeFromRide(location, type, vehicle.ride);
+                if (element == nullptr || element->getDirection() != direction)
+                    return false;
+
+                bool previousBlock = backwards;
+                switch (subposition)
+                {
+                    case VehicleTrackSubposition::chairliftGoingBack:
+                        previousBlock = !backwards;
+                        break;
+                    case VehicleTrackSubposition::chairliftEndBullwheel:
+                        subposition = backwards ? VehicleTrackSubposition::chairliftGoingOut
+                                                : VehicleTrackSubposition::chairliftGoingBack;
+                        previousBlock = true;
+                        break;
+                    case VehicleTrackSubposition::chairliftStartBullwheel:
+                        subposition = backwards ? VehicleTrackSubposition::chairliftGoingBack
+                                                : VehicleTrackSubposition::chairliftGoingOut;
+                        previousBlock = false;
+                        break;
+                    case VehicleTrackSubposition::goKartsMovingToRightLane:
+                        subposition = VehicleTrackSubposition::goKartsRightLane;
+                        break;
+                    case VehicleTrackSubposition::goKartsMovingToLeftLane:
+                        subposition = VehicleTrackSubposition::goKartsLeftLane;
+                        break;
+                    default:
+                        break;
+                }
+
+                if (previousBlock)
+                {
+                    OpenRCT2::TrackBeginEnd connection;
+                    if (!OpenRCT2::trackBlockGetPrevious({ location, element }, &connection))
+                        return false;
+                    location = { connection.begin_x, connection.begin_y, connection.begin_z };
+                    direction = connection.begin_direction & 3;
+                    type = connection.begin_element->asTrack()->getTrackType();
+                }
+                else
+                {
+                    const CoordsXYE input{ location, element };
+                    CoordsXYE output;
+                    int32_t z, nextDirection;
+                    if (!OpenRCT2::trackBlockGetNext(&input, &output, &z, &nextDirection))
+                        return false;
+                    location = { output, z };
+                    direction = nextDirection & 3;
+                    type = output.element->asTrack()->getTrackType();
+                }
+
+                if (subposition >= VehicleTrackSubposition::chairliftGoingOut
+                    && subposition <= VehicleTrackSubposition::chairliftStartBullwheel)
+                {
+                    if (TileCoordsXYZ{ location } == ride->chairliftBullwheelLocation[1])
+                        subposition = VehicleTrackSubposition::chairliftEndBullwheel;
+                    else if (TileCoordsXYZ{ location } == ride->chairliftBullwheelLocation[0])
+                        subposition = VehicleTrackSubposition::chairliftStartBullwheel;
+                }
+                count = OpenRCT2::VehicleGetMoveInfoSize(subposition, type, direction);
+                if (count < 2)
+                    return false;
+                progress = backwards ? count - 1 : 0;
+            }
+
+            end = readSample();
+            const auto dx = static_cast<float>(end.x - start.x);
+            const auto dy = static_cast<float>(end.y - start.y);
+            const auto dz = static_cast<float>(end.z - start.z);
+            const auto length = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (length > 0.0001f && distance <= length)
+            {
+                amount = distance / length;
+                return true;
+            }
+            distance -= length;
+            start = end;
+        }
+        return false;
     }
 
     OpenRCT2::Guest* GetPeep(Rct3DOpenRCT2Context* context, uint16_t entityId)
@@ -1863,6 +1982,39 @@ extern "C"
         catch (...)
         {
             return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Copying positioned ride vehicle data raised an unknown error.");
+        }
+    }
+
+    int32_t rct3d_openrct2_get_vehicle_look_ahead(
+        Rct3DOpenRCT2Context* context, uint16_t entity_id, float distance,
+        Rct3DOpenRCT2VehiclePathSample* start, Rct3DOpenRCT2VehiclePathSample* end, float* amount, int32_t* available)
+    {
+        try
+        {
+            std::lock_guard<std::mutex> lock(gAdapterMutex);
+            gLastError.clear();
+            const auto state = ValidateContext(context);
+            if (state != RCT3D_OPENRCT2_OK)
+                return state;
+            if (!context->parkLoaded)
+                return SetError(RCT3D_OPENRCT2_INVALID_STATE, "No park is loaded.");
+            if (start == nullptr || end == nullptr || amount == nullptr || available == nullptr
+                || !std::isfinite(distance) || distance <= 0.0f || distance > 128.0f)
+                return SetError(RCT3D_OPENRCT2_INVALID_ARGUMENT, "Invalid vehicle look-ahead arguments.");
+            *available = 0;
+            const auto* vehicle = OpenRCT2::getGameState().entities.tryGetEntity<OpenRCT2::Vehicle>(
+                EntityId::FromUnderlying(entity_id));
+            if (vehicle != nullptr)
+                *available = GetVehicleLookAheadSamples(*vehicle, distance, *start, *end, *amount) ? 1 : 0;
+            return RCT3D_OPENRCT2_OK;
+        }
+        catch (const std::exception& error)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, error.what());
+        }
+        catch (...)
+        {
+            return SetError(RCT3D_OPENRCT2_INTERNAL_ERROR, "Reading vehicle look-ahead raised an unknown error.");
         }
     }
 
