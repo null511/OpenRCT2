@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 42u
+#define RCT3D_OPENRCT2_ABI_VERSION 43u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -113,6 +113,8 @@ typedef struct Rct3DOpenRCT2VehicleData
 	uint8_t vehicle_type;
 	uint8_t paint_style;
 	uint16_t rotation_frame_mask;
+	uint8_t spin_position;
+	uint8_t has_independent_spin;
 } Rct3DOpenRCT2VehicleData;
 
 typedef struct Rct3DOpenRCT2VehiclePathSample

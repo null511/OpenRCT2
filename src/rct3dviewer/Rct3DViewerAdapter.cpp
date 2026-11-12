@@ -69,9 +69,11 @@ static_assert(sizeof(Rct3DOpenRCT2SurfaceData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2ObstacleData) == 10);
-static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 68);
+static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 72);
 static_assert(offsetof(Rct3DOpenRCT2VehicleData, object_id_hash) == 60);
 static_assert(offsetof(Rct3DOpenRCT2VehicleData, rotation_frame_mask) == 66);
+static_assert(offsetof(Rct3DOpenRCT2VehicleData, spin_position) == 68);
+static_assert(offsetof(Rct3DOpenRCT2VehicleData, has_independent_spin) == 69);
 static_assert(sizeof(Rct3DOpenRCT2VehiclePathSample) == 28);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 26);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 36);
@@ -583,8 +585,22 @@ namespace
         return true;
     }
 
-    bool VehicleHasTrackPitchAndRoll(const OpenRCT2::Vehicle& vehicle)
+    bool VehicleHasTrackPitchAndRoll(const OpenRCT2::Vehicle& vehicle, const CarEntry* carEntry)
     {
+        if (carEntry != nullptr)
+        {
+            // Tower movement is vertical, but the specialized vehicle visuals keep the cabin upright.
+            switch (carEntry->paintStyle)
+            {
+                case OpenRCT2::VehiclePaintStyle::launchedFreefall:
+                case OpenRCT2::VehiclePaintStyle::observationTower:
+                case OpenRCT2::VehiclePaintStyle::rotoDrop:
+                    return false;
+                default:
+                    break;
+            }
+        }
+
         switch (vehicle.status)
         {
             case OpenRCT2::Vehicle::Status::travellingDodgems:
@@ -660,6 +676,12 @@ namespace
         const auto vehicleType = static_cast<uint8_t>(
             vehicle.vehicle_type + (vehicle.flags.has(OpenRCT2::VehicleFlag::carIsInverted) ? 1 : 0));
         const auto* visualCarEntry = rideEntry == nullptr ? nullptr : rideEntry->GetCar(vehicleType);
+        // These visuals use an absolute spin heading, independently of the track direction.
+        const auto hasIndependentSpin = visualCarEntry != nullptr
+            && visualCarEntry->flags.has(CarEntryFlag::hasSpinning)
+            && !visualCarEntry->flags.has(CarEntryFlag::hasSpinningCombinedWithNonSpinning)
+            && (visualCarEntry->paintStyle == OpenRCT2::VehiclePaintStyle::riverRapids
+                || visualCarEntry->paintStyle == OpenRCT2::VehiclePaintStyle::virginiaReel);
         const auto* object = rideEntry == nullptr ? nullptr
             : OpenRCT2::GetContext()->GetObjectManager().GetLoadedObject(OpenRCT2::ObjectType::ride, vehicle.ride_subtype);
         const auto objectHash = object == nullptr ? 0u
@@ -674,8 +696,8 @@ namespace
             static_cast<uint8_t>(vehicle.pitch),
             static_cast<uint8_t>(vehicle.roll),
             static_cast<uint8_t>(OpenRCT2::Drawing::getColourMapShade(vehicle.colours.Body, 6)),
-            VehicleHasTrackPitchAndRoll(vehicle) ? GetVehiclePitchRadians(vehicle.pitch) : 0.0f,
-            VehicleHasTrackPitchAndRoll(vehicle) ? GetVehicleRollRadians(vehicle.roll) : 0.0f,
+            VehicleHasTrackPitchAndRoll(vehicle, visualCarEntry) ? GetVehiclePitchRadians(vehicle.pitch) : 0.0f,
+            VehicleHasTrackPitchAndRoll(vehicle, visualCarEntry) ? GetVehicleRollRadians(vehicle.roll) : 0.0f,
             vehicle.ride.ToUnderlying(),
             trainHead == nullptr ? vehicle.id.ToUnderlying() : trainHead->id.ToUnderlying(),
             vehicle.current_station.ToUnderlying(),
@@ -693,6 +715,8 @@ namespace
             vehicleType,
             visualCarEntry == nullptr ? uint8_t{ 255 } : static_cast<uint8_t>(visualCarEntry->paintStyle),
             visualCarEntry == nullptr ? uint16_t{ 0 } : visualCarEntry->tabRotationMask,
+            vehicle.spin_sprite,
+            static_cast<uint8_t>(hasIndependentSpin),
         };
     }
 
@@ -750,7 +774,15 @@ namespace
         Rct3DOpenRCT2VehiclePathSample& start, Rct3DOpenRCT2VehiclePathSample& end, float& amount)
     {
         const auto* ride = OpenRCT2::GetRide(vehicle.ride);
-        if (ride == nullptr || OpenRCT2::GetRideTypeDescriptor(ride->type).flags.has(OpenRCT2::RtdFlag::isFlatRide))
+        if (ride == nullptr)
+            return false;
+
+        const auto& descriptor = OpenRCT2::GetRideTypeDescriptor(ride->type);
+        if (!descriptor.flags.has(OpenRCT2::RtdFlag::hasTrack)
+            || descriptor.flags.has(OpenRCT2::RtdFlag::isFlatRide)
+            || descriptor.flags.has(OpenRCT2::RtdFlag::hasSinglePieceStation)
+            || vehicle.status == OpenRCT2::Vehicle::Status::travellingBoat
+            || vehicle.status == OpenRCT2::Vehicle::Status::travellingDodgems)
             return false;
 
         auto location = vehicle.TrackLocation;
