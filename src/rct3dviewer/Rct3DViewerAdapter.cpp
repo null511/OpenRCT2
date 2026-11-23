@@ -669,8 +669,14 @@ namespace
         const auto* trainHead = vehicle.GetHead();
         const auto* rideEntry = vehicle.GetRideEntry();
         const auto* carEntry = rideEntry == nullptr ? nullptr : rideEntry->GetCar(vehicle.vehicle_type);
-        const auto swingPosition = static_cast<int16_t>(
+        auto swingPosition = static_cast<int16_t>(
             carEntry != nullptr && carEntry->flags.has(CarEntryFlag::hasSwinging) ? vehicle.SwingPosition : 0);
+        if (carEntry != nullptr && carEntry->flags.has(CarEntryFlag::useWoodenWildMouseSwing)
+            && !carEntry->flags.has(CarEntryFlag::useSlideSwing))
+        {
+            // Wild Mouse cars lean outward; slide-mode vehicles retain their inward roll convention.
+            swingPosition = static_cast<int16_t>(-swingPosition);
+        }
 
         // Match PaintVehicle's car-entry selection without changing the movement orientation.
         const auto vehicleType = static_cast<uint8_t>(
