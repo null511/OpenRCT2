@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 43u
+#define RCT3D_OPENRCT2_ABI_VERSION 44u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -93,7 +93,7 @@ typedef struct Rct3DOpenRCT2VehicleData
 	uint8_t orientation;
 	uint8_t pitch;
 	uint8_t roll;
-	uint8_t primary_palette_index;
+	uint8_t body_palette_index;
 	float pitch_radians;
 	float roll_radians;
 	uint16_t ride_id;
@@ -107,7 +107,7 @@ typedef struct Rct3DOpenRCT2VehicleData
 	uint16_t track_progress_total;
 	uint16_t track_type_and_direction;
 	uint8_t track_subposition;
-	uint8_t track_reserved;
+	uint8_t trim_palette_index;
 	int16_t swing_position;
 	uint32_t object_id_hash;
 	uint8_t vehicle_type;

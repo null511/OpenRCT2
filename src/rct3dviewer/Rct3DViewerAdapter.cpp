@@ -70,6 +70,8 @@ static_assert(sizeof(Rct3DOpenRCT2PathData) == 29);
 static_assert(sizeof(Rct3DOpenRCT2TreeData) == 20);
 static_assert(sizeof(Rct3DOpenRCT2ObstacleData) == 10);
 static_assert(sizeof(Rct3DOpenRCT2VehicleData) == 72);
+static_assert(offsetof(Rct3DOpenRCT2VehicleData, body_palette_index) == 19);
+static_assert(offsetof(Rct3DOpenRCT2VehicleData, trim_palette_index) == 55);
 static_assert(offsetof(Rct3DOpenRCT2VehicleData, object_id_hash) == 60);
 static_assert(offsetof(Rct3DOpenRCT2VehicleData, rotation_frame_mask) == 66);
 static_assert(offsetof(Rct3DOpenRCT2VehicleData, spin_position) == 68);
@@ -715,7 +717,7 @@ namespace
             vehicle.GetTrackProgress(),
             vehicle.TrackTypeAndDirection,
             static_cast<uint8_t>(vehicle.TrackSubposition),
-            0,
+            static_cast<uint8_t>(OpenRCT2::Drawing::getColourMapShade(vehicle.colours.Trim, 6)),
             swingPosition,
             objectHash,
             vehicleType,
