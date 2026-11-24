@@ -22,7 +22,7 @@ extern "C"
 {
 #endif
 
-#define RCT3D_OPENRCT2_ABI_VERSION 44u
+#define RCT3D_OPENRCT2_ABI_VERSION 45u
 
 typedef struct Rct3DOpenRCT2Context Rct3DOpenRCT2Context;
 
@@ -191,6 +191,7 @@ typedef struct Rct3DOpenRCT2RideEntranceData
 	uint8_t base_height;
 	uint8_t direction;
 	uint8_t clearance_height;
+	uint32_t station_object_id_hash;
 } Rct3DOpenRCT2RideEntranceData;
 
 typedef struct Rct3DOpenRCT2PaletteEntry

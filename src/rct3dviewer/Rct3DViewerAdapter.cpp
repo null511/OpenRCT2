@@ -29,6 +29,7 @@
 #include "../openrct2/object/FootpathRailingsObject.h"
 #include "../openrct2/object/FootpathSurfaceObject.h"
 #include "../openrct2/object/PathAdditionEntry.h"
+#include "../openrct2/object/StationObject.h"
 #include "../openrct2/object/TerrainEdgeObject.h"
 #include "../openrct2/paint/tile_element/Paint.Path.h"
 #include "../openrct2/object/TerrainSurfaceObject.h"
@@ -79,7 +80,8 @@ static_assert(offsetof(Rct3DOpenRCT2VehicleData, has_independent_spin) == 69);
 static_assert(sizeof(Rct3DOpenRCT2VehiclePathSample) == 28);
 static_assert(sizeof(Rct3DOpenRCT2PeepData) == 26);
 static_assert(sizeof(Rct3DOpenRCT2TrackData) == 36);
-static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 15);
+static_assert(sizeof(Rct3DOpenRCT2RideEntranceData) == 19);
+static_assert(offsetof(Rct3DOpenRCT2RideEntranceData, station_object_id_hash) == 15);
 static_assert(sizeof(Rct3DOpenRCT2PaletteEntry) == 4);
 
 struct Rct3DOpenRCT2Context
@@ -561,6 +563,10 @@ namespace
                             || entrance->getEntranceType() == OpenRCT2::EntranceType::rideExit))
                     {
                         const auto entranceType = entrance->getEntranceType() == OpenRCT2::EntranceType::rideEntrance ? 0u : 1u;
+                        const auto* ride = OpenRCT2::GetRide(entrance->getRideIndex());
+                        const auto* stationObject = ride == nullptr ? nullptr : ride->getStationObject();
+                        const auto stationIdHash = stationObject == nullptr || stationObject->GetIdentifier().empty()
+                            ? 0u : HashObjectIdentifier(stationObject->GetIdentifier());
                         const Rct3DOpenRCT2RideEntranceData data{
                             x,
                             y,
@@ -570,6 +576,7 @@ namespace
                             entrance->baseHeight,
                             static_cast<uint8_t>(entrance->getDirection()),
                             entrance->clearanceHeight,
+                            stationIdHash,
                         };
                         if (!callback(data))
                         {
