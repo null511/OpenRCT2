@@ -33,6 +33,8 @@
 #include "../openrct2/object/TerrainEdgeObject.h"
 #include "../openrct2/paint/tile_element/Paint.Path.h"
 #include "../openrct2/object/TerrainSurfaceObject.h"
+#include "../openrct2/park/Legacy.h"
+#include "../openrct2/rct2/RCT2.h"
 #include "../openrct2/ride/Vehicle.h"
 #include "../openrct2/ride/VehicleGeometry.h"
 #include "../openrct2/ride/VehicleSubpositionData.h"
@@ -165,6 +167,13 @@ namespace
         const auto* railingsObject = path.hasLegacyPathEntry()
             ? static_cast<const OpenRCT2::Object*>(path.getLegacyPathEntry())
             : static_cast<const OpenRCT2::Object*>(path.getRailingsEntry());
+        auto surfaceIdentifier = surfaceObject == nullptr ? std::string_view{} : surfaceObject->GetIdentifier();
+        if (path.hasLegacyPathEntry() && surfaceObject != nullptr)
+        {
+            const auto* mapping = GetFootpathMapping(surfaceObject->GetDescriptor());
+            if (mapping != nullptr)
+                surfaceIdentifier = path.isQueue() ? mapping->QueueSurface : mapping->NormalSurface;
+        }
         const auto* railingsDescriptor = path.getRailingsDescriptor();
         const auto* additionEntry = path.getAdditionEntry();
         const auto* additionObject = additionEntry == nullptr
@@ -199,7 +208,7 @@ namespace
         return {
             tileX,
             tileY,
-            surfaceObject == nullptr ? 0u : HashObjectIdentifier(surfaceObject->GetIdentifier()),
+            surfaceObject == nullptr ? 0u : HashObjectIdentifier(surfaceIdentifier),
             railingsObject == nullptr ? 0u : HashObjectIdentifier(railingsObject->GetIdentifier()),
             path.baseHeight,
             path.clearanceHeight,
